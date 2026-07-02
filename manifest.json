@@ -1,0 +1,37 @@
+{
+  "name": "SMS Dashboard",
+  "version": "1.0.0",
+  "description": "Tom's Pest Control SMS dashboard — templates, rules, inbox, and Yeastar TG400 sending.",
+  "iconURL": "https://img.icons8.com/color/512/sms.png",
+  "supportURL": "https://tomspestcontrol.com.au",
+  "supportEmail": "office@tomspestcontrol.com.au",
+  "oauth": {
+    "scope": "read_jobs read_customers manage_customers"
+  },
+  "menuItems": [
+    {
+      "name": "SMS Dashboard",
+      "type": "addon",
+      "iconURL": "https://img.icons8.com/color/512/sms.png",
+      "event": "sms_dashboard_settings"
+    }
+  ],
+  "actions": [
+    {
+      "name": "Send SMS",
+      "type": "online",
+      "entity": "job",
+      "iconURL": "https://img.icons8.com/color/512/sms.png",
+      "event": "sms_dashboard_action",
+      "location": "modal"
+    }
+  ],
+  "webhooks": [
+    {
+      "object": "job",
+      "fields": [
+        "status"
+      ]
+    }
+  ]
+}
