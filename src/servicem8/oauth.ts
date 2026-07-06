@@ -76,7 +76,10 @@ export async function getAccessToken(account_uuid: string): Promise<string | und
     getOAuthTokens("default") ||
     getSingleOAuthTokens();
   if (!row) return undefined;
-  const key = ("account_uuid" in row && row.account_uuid) || account_uuid || "default";
+  const key =
+    ("account_uuid" in row && typeof row.account_uuid === "string" ? row.account_uuid : "") ||
+    account_uuid ||
+    "default";
   const now = Math.floor(Date.now() / 1000);
   if (row.expires_at > now + 60) return row.access_token;
   try {
