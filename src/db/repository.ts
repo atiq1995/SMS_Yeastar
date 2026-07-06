@@ -157,6 +157,13 @@ export function getOAuthTokens(account_uuid: string): { access_token: string; re
     | undefined;
 }
 
+/** ponytail: single-tenant fallback when JWT has no account_uuid */
+export function getSingleOAuthTokens(): { account_uuid: string; access_token: string; refresh_token: string | null; expires_at: number } | undefined {
+  return db()
+    .prepare("SELECT account_uuid, access_token, refresh_token, expires_at FROM oauth_tokens ORDER BY updated_at DESC LIMIT 1")
+    .get() as { account_uuid: string; access_token: string; refresh_token: string | null; expires_at: number } | undefined;
+}
+
 export function countOutboundSince(sinceIso: string): number {
   const row = db().prepare("SELECT COUNT(*) AS c FROM outbound_messages WHERE created_at >= ?").get(sinceIso) as { c: number };
   return row.c;

@@ -6,3 +6,4 @@ data/
 *.db-journal
 .DS_Store
 *.pem
+preview-dashboard.html

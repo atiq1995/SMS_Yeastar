@@ -23,6 +23,14 @@ export async function getCompany(accessToken: string, companyUuid: string): Prom
   return res.json() as Promise<ServiceM8Company>;
 }
 
+export async function getVendorUuid(accessToken: string): Promise<string | undefined> {
+  const res = await sm8Fetch("/api_1.0/vendor.json", accessToken);
+  if (!res.ok) return undefined;
+  const v = (await res.json()) as Record<string, unknown>;
+  const uuid = v.uuid ?? v.UUID;
+  return typeof uuid === "string" && uuid ? uuid : undefined;
+}
+
 export function jobCompanyUuid(job: ServiceM8Job): string | undefined {
   for (const k of ["company_uuid", "companyUUID", "company_uuid_business", "company_uuid_contact"]) {
     const v = job[k];

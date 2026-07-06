@@ -1,13 +1,20 @@
 import type { Request, Response } from "express";
 import { verifyServiceM8Jwt, type AddonJwt } from "./jwt.js";
 import { renderDashboardHtml, renderJobActionHtml } from "../ui/dashboard.js";
-import { setSetting, upsertTemplate, replaceRules } from "../db/repository.js";
+import {
+  setSetting,
+  upsertTemplate,
+  replaceRules,
+  getTemplate,
+  listRules,
+  insertOutbound,
+  getSingleOAuthTokens,
+} from "../db/repository.js";
 import { sendSms } from "../yeastar/send.js";
 import { processJobEvent } from "../workers/process-event.js";
 import { getJob, getCompany, jobCompanyUuid, resolveMobile } from "./api.js";
-import { getAccessToken } from "./oauth.js";
+import { resolveAccessToken } from "./oauth.js";
 import { renderTemplate } from "../engine/templates.js";
-import { getTemplate, listRules, insertOutbound } from "../db/repository.js";
 import { evaluateRules } from "../engine/rules.js";
 import { enqueueSend } from "../yeastar/queue.js";
 
@@ -16,6 +23,8 @@ function accountUuid(payload: AddonJwt, args: Record<string, unknown>): string {
     payload.account_uuid ||
     (args.account_uuid as string) ||
     (args.accountUUID as string) ||
+    (args.vendorUUID as string) ||
+    getSingleOAuthTokens()?.account_uuid ||
     ""
   );
 }
@@ -111,7 +120,7 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
         sendInvokeJson(res, { error: "missing_job_uuid" });
         return;
       }
-      const token = await getAccessToken(acct);
+      const token = await resolveAccessToken(acct, payload.auth);
       if (!token) {
         sendInvokeJson(res, { error: "no_oauth" });
         return;

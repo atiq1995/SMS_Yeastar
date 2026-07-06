@@ -1,5 +1,6 @@
 import { env, requireServiceM8OAuth } from "../config/env.js";
-import { saveOAuthTokens } from "../db/repository.js";
+import { saveOAuthTokens, getOAuthTokens, getSingleOAuthTokens } from "../db/repository.js";
+import { getVendorUuid } from "./api.js";
 
 const AUTH_URL = "https://go.servicem8.com/oauth/authorize";
 const TOKEN_URL = "https://go.servicem8.com/oauth/access_token";
@@ -45,11 +46,16 @@ export async function exchangeCode(code: string, account_uuid: string): Promise<
   });
   const tok = await postToken(body);
   const expires_at = Math.floor(Date.now() / 1000) + (tok.expires_in ?? 3600);
-  saveOAuthTokens(account_uuid, tok.access_token, tok.refresh_token ?? null, expires_at);
+  const vendorUuid = await getVendorUuid(tok.access_token);
+  const key = vendorUuid || account_uuid || "default";
+  saveOAuthTokens(key, tok.access_token, tok.refresh_token ?? null, expires_at);
+  if (vendorUuid && account_uuid && account_uuid !== vendorUuid && account_uuid !== "default") {
+    saveOAuthTokens(account_uuid, tok.access_token, tok.refresh_token ?? null, expires_at);
+  }
 }
 
 export async function refreshAccessToken(account_uuid: string): Promise<string> {
-  const row = (await import("../db/repository.js")).getOAuthTokens(account_uuid);
+  const row = getOAuthTokens(account_uuid);
   if (!row?.refresh_token) throw new Error("no_refresh_token");
   requireServiceM8OAuth();
   const body = new URLSearchParams({
@@ -65,14 +71,26 @@ export async function refreshAccessToken(account_uuid: string): Promise<string> 
 }
 
 export async function getAccessToken(account_uuid: string): Promise<string | undefined> {
-  const { getOAuthTokens } = await import("../db/repository.js");
-  const row = getOAuthTokens(account_uuid);
+  const row =
+    (account_uuid ? getOAuthTokens(account_uuid) : undefined) ||
+    getOAuthTokens("default") ||
+    getSingleOAuthTokens();
   if (!row) return undefined;
+  const key = ("account_uuid" in row && row.account_uuid) || account_uuid || "default";
   const now = Math.floor(Date.now() / 1000);
   if (row.expires_at > now + 60) return row.access_token;
   try {
-    return await refreshAccessToken(account_uuid);
+    return await refreshAccessToken(key);
   } catch {
     return row.access_token;
   }
+}
+
+/** JWT may include a short-lived token; else fall back to stored OAuth */
+export async function resolveAccessToken(
+  accountHint: string,
+  jwtAuth?: { accessToken?: string }
+): Promise<string | undefined> {
+  if (jwtAuth?.accessToken) return jwtAuth.accessToken;
+  return getAccessToken(accountHint);
 }
