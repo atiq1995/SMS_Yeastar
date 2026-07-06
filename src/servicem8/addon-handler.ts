@@ -28,6 +28,11 @@ function eventName(payload: AddonJwt): string {
   return String(payload.event || payload.args?.event || "");
 }
 
+/** ServiceM8 gateway parses JSON first; HTML goes in eventResponse */
+function sendEventHtml(res: Response, html: string): void {
+  res.json({ eventResponse: html });
+}
+
 export async function handleAddonPost(req: Request, res: Response): Promise<void> {
   let payload: AddonJwt;
   try {
@@ -43,11 +48,11 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
 
   try {
     if (event === "sms_dashboard_settings") {
-      res.type("html").send(renderDashboardHtml(acct));
+      sendEventHtml(res, renderDashboardHtml(acct));
       return;
     }
     if (event === "sms_dashboard_action") {
-      res.type("html").send(renderJobActionHtml(acct, job || ""));
+      sendEventHtml(res, renderJobActionHtml(acct, job || ""));
       return;
     }
     if (event === "sms_dashboard_save") {
