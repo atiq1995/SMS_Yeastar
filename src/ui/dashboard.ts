@@ -83,7 +83,8 @@ export function renderDashboardHtml(accountUuid: string, jobUuid?: string): stri
 ${jobUuid ? `<div style="margin-top:16px"><button type="button" id="sendJobSms">Send SMS for this job</button><pre id="sendOut"></pre></div>` : ""}
 
 <script>
-const client = new SMClient();
+let client = null;
+try { client = SMClient.init(); } catch (e) { console.warn('SMClient', e); }
 const accountUuid = ${JSON.stringify(accountUuid)};
 const jobUuid = ${JSON.stringify(jobUuid ?? "")};
 
@@ -97,6 +98,7 @@ document.querySelectorAll('.tab').forEach((btn) => {
 });
 
 function invoke(event, args) {
+  if (!client) throw new Error('ServiceM8 SDK not available');
   return client.invoke(event, Object.assign({ account_uuid: accountUuid }, args || {}));
 }
 

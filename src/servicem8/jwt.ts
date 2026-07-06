@@ -2,6 +2,8 @@ import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
 
 export type AddonJwt = jwt.JwtPayload & {
+  eventName?: string;
+  eventArgs?: Record<string, unknown>;
   event?: string;
   account_uuid?: string;
   job_uuid?: string;
@@ -9,6 +11,7 @@ export type AddonJwt = jwt.JwtPayload & {
   object?: string;
   entry?: Record<string, unknown>;
   args?: Record<string, unknown>;
+  auth?: { accessToken?: string };
 };
 
 export function verifyServiceM8Jwt(rawBody: Buffer | string): AddonJwt {
