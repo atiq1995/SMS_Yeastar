@@ -44,7 +44,7 @@ function eventArgs(payload: AddonJwt): Record<string, unknown> {
 }
 
 function eventName(payload: AddonJwt): string {
-  return String(payload.eventName || payload.event || eventArgs(payload).event || "");
+  return String(payload.eventName || payload.event || eventArgs(payload).event || "").toLowerCase();
 }
 
 /** ServiceM8 gateway parses JSON first; HTML goes in eventResponse */
@@ -110,8 +110,12 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
       return;
     }
     if (event === "sms_test_yeastar") {
-      const result = await sendSms("0000000000", "SMS dashboard connection test");
-      sendInvokeJson(res, { ok: result.accepted, dryRun: result.dryRun, detail: result.rawResponse });
+      try {
+        const result = await sendSms("0000000000", "SMS dashboard connection test");
+        sendInvokeJson(res, { ok: result.accepted, dryRun: result.dryRun, detail: result.rawResponse });
+      } catch (err) {
+        sendInvokeJson(res, { ok: false, error: String(err) });
+      }
       return;
     }
     if (event === "sms_dashboard_send") {
@@ -148,16 +152,21 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
         jobNumber: String(j.generated_job_id ?? jobId),
         status,
       });
-      const result = await enqueueSend(mobile, text);
-      insertOutbound({
-        account_uuid: acct,
-        job_uuid: jobId,
-        to_number: mobile,
-        body: text,
-        status: result.accepted ? (result.dryRun ? "dry_run" : "sent") : "failed",
-        provider_response: result.rawResponse,
-      });
-      sendInvokeJson(res, { ok: result.accepted, dryRun: result.dryRun });
+      // Respond before Yeastar queue wait — ServiceM8 invoke() times out otherwise
+      sendInvokeJson(res, { ok: true, queued: true });
+      void enqueueSend(mobile, text)
+        .then((result) => {
+          insertOutbound({
+            account_uuid: acct,
+            job_uuid: jobId,
+            to_number: mobile,
+            body: text,
+            status: result.accepted ? (result.dryRun ? "dry_run" : "sent") : "failed",
+            provider_response: result.rawResponse,
+          });
+          console.log("sms sent", jobId, mobile, result.accepted);
+        })
+        .catch((err) => console.error("sms send failed", err));
       return;
     }
     if (event === "webhook_subscription") {
@@ -165,7 +174,7 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
       return;
     }
 
-  const webhookish = event.includes("webhook") || payload.object === "job" || event.toLowerCase().includes("job");
+  const webhookish = event.includes("webhook") || payload.object === "job" || event.includes("job");
   if (webhookish || event === "job" || event.includes("status")) {
     const objectId = job || (payload.entry?.uuid as string) || payload.object_uuid;
     const status = (payload.entry?.status as string) || (args.status as string);
@@ -187,6 +196,8 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
     sendInvokeJson(res, { error: "unknown_event", event });
   } catch (err) {
     console.error("addon handler error", err);
-    sendInvokeJson(res, { error: String(err) });
+    if (!res.headersSent) {
+      sendInvokeJson(res, { error: String(err) });
+    }
   }
 }

@@ -122,8 +122,14 @@ document.getElementById('testYeastar')?.addEventListener('click', async () => {
   document.getElementById('settingsOut').textContent = JSON.stringify(res);
 });
 document.getElementById('sendJobSms')?.addEventListener('click', async () => {
-  const res = await invoke('sms_dashboard_send', { job_uuid: jobUuid });
-  document.getElementById('sendOut').textContent = JSON.stringify(res);
+  try {
+    const res = await invoke('sms_dashboard_send', { job_uuid: jobUuid });
+    document.getElementById('sendOut').textContent = res.queued
+      ? 'SMS queued — check Log tab in a few seconds.'
+      : JSON.stringify(res);
+  } catch (e) {
+    document.getElementById('sendOut').textContent = String(e);
+  }
 });
 </script>
 </body></html>`;
