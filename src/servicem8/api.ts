@@ -25,10 +25,20 @@ export async function getCompany(accessToken: string, companyUuid: string): Prom
 
 export async function getVendorUuid(accessToken: string): Promise<string | undefined> {
   const res = await sm8Fetch("/api_1.0/vendor.json", accessToken);
-  if (!res.ok) return undefined;
-  const v = (await res.json()) as Record<string, unknown>;
-  const uuid = v.uuid ?? v.UUID;
-  return typeof uuid === "string" && uuid ? uuid : undefined;
+  if (!res.ok) {
+    console.error("getVendorUuid failed", res.status);
+    return undefined;
+  }
+  const data = (await res.json()) as unknown;
+  if (Array.isArray(data) && data[0] && typeof data[0] === "object") {
+    const uuid = (data[0] as Record<string, unknown>).uuid;
+    if (typeof uuid === "string" && uuid) return uuid;
+  }
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    const uuid = (data as Record<string, unknown>).uuid;
+    if (typeof uuid === "string" && uuid) return uuid;
+  }
+  return undefined;
 }
 
 export function jobCompanyUuid(job: ServiceM8Job): string | undefined {

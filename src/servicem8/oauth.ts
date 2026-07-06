@@ -11,7 +11,7 @@ export function authorizeUrl(state?: string): string {
   u.searchParams.set("response_type", "code");
   u.searchParams.set("client_id", env.servicem8AppId);
   u.searchParams.set("redirect_uri", env.servicem8RedirectUri);
-  u.searchParams.set("scope", "read_jobs read_customers manage_customers");
+  u.searchParams.set("scope", "vendor read_jobs read_customers manage_customers");
   if (state) u.searchParams.set("state", state);
   return u.toString();
 }
@@ -49,8 +49,10 @@ export async function exchangeCode(code: string, account_uuid: string): Promise<
   const vendorUuid = await getVendorUuid(tok.access_token);
   const key = vendorUuid || account_uuid || "default";
   saveOAuthTokens(key, tok.access_token, tok.refresh_token ?? null, expires_at);
-  if (vendorUuid && account_uuid && account_uuid !== vendorUuid && account_uuid !== "default") {
-    saveOAuthTokens(account_uuid, tok.access_token, tok.refresh_token ?? null, expires_at);
+  if (key === "default" && !vendorUuid) {
+    console.warn("oauth saved as default — vendor scope missing or vendor.json failed; reconnect after adding vendor scope");
+  } else {
+    console.log("oauth saved for", key);
   }
 }
 
