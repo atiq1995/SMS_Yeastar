@@ -75,8 +75,6 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
   if (!rule) return { sent: false, reason: "no_rule" };
   const tpl = getTemplate(rule.template_id);
   if (!tpl) return { sent: false, reason: "no_template" };
-
-  const mobile = ctx.mobile;
   if (!mobile) return { sent: false, reason: "no_mobile" };
 
   const body = renderTemplate(tpl.body, { ...ctx, status });
