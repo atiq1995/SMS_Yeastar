@@ -12,12 +12,12 @@ export async function sendSms(destination: string, message: string): Promise<Yea
   const port = env.yeastarHttpPort;
   const base = `http://${env.yeastarHost}:${port}/cgi/WebCGI`;
   const u = new URL(base);
-  u.searchParams.set("1500101", "account");
-  u.searchParams.set("username", env.yeastarUsername);
+  // Yeastar format: 1500101=account=USER (not a separate username= param)
+  u.searchParams.set("1500101", `account=${env.yeastarUsername}`);
   u.searchParams.set("password", env.yeastarPassword);
   u.searchParams.set("port", String(env.yeastarSimPort));
   u.searchParams.set("destination", destination);
-  u.searchParams.set("message", message);
+  u.searchParams.set("content", message);
 
   if (!env.yeastarSendEnabled) {
     return { accepted: true, dryRun: true, rawResponse: u.toString().replace(env.yeastarPassword, "***") };

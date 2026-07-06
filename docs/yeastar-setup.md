@@ -9,4 +9,4 @@
    - `YEASTAR_HTTP_PORT` = external port forwarded to Yeastar HTTP (e.g. 8080)
    - `YEASTAR_API_PORT` = external port forwarded to 5038 (often 5038)
 6. Keep `YEASTAR_SEND_ENABLED=false` until dashboard **Test Yeastar** succeeds.
-7. Outbound uses GET `/cgi/WebCGI` with `account`, `username`, `password`, `destination`, `message` query params.
+7. Outbound uses GET `/cgi/WebCGI` — format: `1500101=account=USER&password=PASS&port=1&destination=NUM&content=MSG` (see [Yeastar HTTP SMS docs](https://support.yeastar.com/hc/en-us/articles/217393078)).

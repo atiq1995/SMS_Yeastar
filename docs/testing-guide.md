@@ -95,9 +95,12 @@ If `ubuntu` fails, try `ec2-user` or check the AMI default user.
 **Option A — Git (if repo is on GitHub):**
 
 ```bash
-export REPO_URL="https://github.com/YOUR_ORG/toms-sms.git"
-bash -c "$(curl -fsSL $REPO_URL/raw/main/scripts/deploy-ec2.sh)" 
+export REPO_URL="https://github.com/atiq1995/SMS_Yeastar.git"
+curl -fsSL https://raw.githubusercontent.com/atiq1995/SMS_Yeastar/main/scripts/deploy-ec2.sh -o /tmp/deploy-ec2.sh
+bash /tmp/deploy-ec2.sh
 ```
+
+`REPO_URL` ends in `.git` — do **not** use it in the raw script URL (`...SMS_Yeastar.git/raw/...` returns 404).
 
 Or clone manually:
 
@@ -148,7 +151,7 @@ DATABASE_PATH=/opt/toms-sms/data/sms.db
 
 SERVICEM8_APP_ID=
 SERVICEM8_APP_SECRET=
-SERVICEM8_REDIRECT_URI=https://YOUR-ELASTIC-IP-DASHED.sslip.io/oauth/callback
+SERVICEM8_REDIRECT_URI=https://15-135-181-227.sslip.io/oauth/callback
 
 YEASTAR_HOST=203.63.75.15
 YEASTAR_HTTP_PORT=48765
@@ -251,7 +254,7 @@ On Yeastar TG400: **API Settings → IP restriction → allow only that IP**.
 SSH into EC2:
 
 ```bash
-curl -v "http://203.63.75.15:48765/cgi/WebCGI?1500101=account&username=apiuser&password=YOURPASS&port=1&destination=61449628057&message=Test+from+EC2"
+curl -v "http://203.63.75.15:48765/cgi/WebCGI?1500101=account=apiuser&password=apipass&port=1&destination=61449628057&content=Test+from+EC2"
 ```
 
 - **Success:** SMS arrives on the phone; curl returns OK/200-style response from Yeastar.
