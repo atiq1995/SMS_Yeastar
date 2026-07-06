@@ -12,7 +12,7 @@ import {
 } from "../db/repository.js";
 import { sendSms } from "../yeastar/send.js";
 import { processJobEvent } from "../workers/process-event.js";
-import { getJob, getCompany, jobCompanyUuid, resolveMobile } from "./api.js";
+import { getJob, getCompany, jobCompanyUuid, resolveJobMobile } from "./api.js";
 import { resolveAccessToken } from "./oauth.js";
 import { renderTemplate } from "../engine/templates.js";
 import { evaluateRules } from "../engine/rules.js";
@@ -136,9 +136,9 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
         return;
       }
       const company = await getCompany(token, cu);
-      const mobile = resolveMobile(company);
+      const mobile = await resolveJobMobile(token, j, company);
       if (!mobile) {
-        sendInvokeJson(res, { error: "no_mobile" });
+        sendInvokeJson(res, { error: "no_mobile", hint: "Add a mobile on the job contact or company contact in ServiceM8" });
         return;
       }
       const status = typeof j.status === "string" ? j.status : "";

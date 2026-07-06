@@ -11,7 +11,7 @@ export function authorizeUrl(state?: string): string {
   u.searchParams.set("response_type", "code");
   u.searchParams.set("client_id", env.servicem8AppId);
   u.searchParams.set("redirect_uri", env.servicem8RedirectUri);
-  u.searchParams.set("scope", "vendor read_jobs read_customers manage_customers");
+  u.searchParams.set("scope", "vendor read_jobs read_customers manage_customers read_customer_contacts");
   if (state) u.searchParams.set("state", state);
   return u.toString();
 }

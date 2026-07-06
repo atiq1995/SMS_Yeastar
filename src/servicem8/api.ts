@@ -50,9 +50,65 @@ export function jobCompanyUuid(job: ServiceM8Job): string | undefined {
 }
 
 export function resolveMobile(company: ServiceM8Company): string | undefined {
-  for (const k of ["mobile", "phone", "mobile_phone", "primary_phone", "Phone"]) {
-    const v = company[k];
-    if (typeof v === "string" && v.trim()) return v.trim();
+  return pickPhone(company);
+}
+
+function pickPhone(record: Record<string, unknown>): string | undefined {
+  for (const k of ["mobile", "phone", "mobile_phone", "primary_phone", "Phone", "contact_phone"]) {
+    const v = record[k];
+    if (typeof v === "string" && v.trim()) return v.trim().replace(/\s+/g, "");
+  }
+  return undefined;
+}
+
+async function listFiltered(accessToken: string, resource: string, filter: string): Promise<Record<string, unknown>[]> {
+  const res = await sm8Fetch(`/api_1.0/${resource}.json?$filter=${encodeURIComponent(filter)}`, accessToken);
+  if (!res.ok) {
+    console.warn(`listFiltered ${resource} failed`, res.status);
+    return [];
+  }
+  const data = (await res.json()) as unknown;
+  return Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+}
+
+export async function listJobContacts(accessToken: string, jobUuid: string): Promise<Record<string, unknown>[]> {
+  return listFiltered(accessToken, "jobcontact", `job_uuid eq '${jobUuid}' and active eq 1`);
+}
+
+export async function listCompanyContacts(accessToken: string, companyUuid: string): Promise<Record<string, unknown>[]> {
+  return listFiltered(accessToken, "companycontact", `company_uuid eq '${companyUuid}' and active eq 1`);
+}
+
+/** Mobile is often on job/company contacts, not the company record itself */
+export async function resolveJobMobile(
+  accessToken: string,
+  job: ServiceM8Job,
+  company: ServiceM8Company
+): Promise<string | undefined> {
+  let mobile = pickPhone(company);
+  if (mobile) return mobile;
+
+  const jobUuid = typeof job.uuid === "string" ? job.uuid : undefined;
+  if (jobUuid) {
+    for (const c of await listJobContacts(accessToken, jobUuid)) {
+      mobile = pickPhone(c);
+      if (mobile) return mobile;
+    }
+  }
+
+  const companyUuid =
+    jobCompanyUuid(job) || (typeof company.uuid === "string" ? company.uuid : undefined);
+  if (companyUuid) {
+    const contacts = await listCompanyContacts(accessToken, companyUuid);
+    const primary = contacts.find((c) => c.is_primary_contact === "1" || c.is_primary_contact === 1);
+    if (primary) {
+      mobile = pickPhone(primary);
+      if (mobile) return mobile;
+    }
+    for (const c of contacts) {
+      mobile = pickPhone(c);
+      if (mobile) return mobile;
+    }
   }
   return undefined;
 }

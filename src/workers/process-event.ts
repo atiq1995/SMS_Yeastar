@@ -1,4 +1,4 @@
-import { getJob, getCompany, jobCompanyUuid, resolveMobile } from "../servicem8/api.js";
+import { getJob, getCompany, jobCompanyUuid, resolveJobMobile } from "../servicem8/api.js";
 import { getAccessToken } from "../servicem8/oauth.js";
 import {
   getTemplate,
@@ -19,7 +19,7 @@ export type ProcessInput = {
   idempotency_key: string;
 };
 
-function jobContext(job: Record<string, unknown>, company: Record<string, unknown>): TemplateContext {
+function jobContext(job: Record<string, unknown>, company: Record<string, unknown>, mobile?: string): TemplateContext {
   const jobNumber =
     (typeof job.generated_job_id === "string" && job.generated_job_id) ||
     (typeof job.job_number === "string" && job.job_number) ||
@@ -39,7 +39,7 @@ function jobContext(job: Record<string, unknown>, company: Record<string, unknow
     status,
     address,
     companyName: customerName,
-    mobile: resolveMobile(company),
+    mobile,
   };
 }
 
@@ -65,7 +65,8 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
   const companyUuid = jobCompanyUuid(job);
   if (!companyUuid) return { sent: false, reason: "no_company" };
   const company = await getCompany(token, companyUuid);
-  const ctx = jobContext(job, company);
+  const mobile = await resolveJobMobile(token, job, company);
+  const ctx = jobContext(job, company, mobile);
   const status = input.status ?? ctx.status;
   const trigger = inferTrigger(input.event_type, status);
   if (!trigger) return { sent: false, reason: "no_trigger" };

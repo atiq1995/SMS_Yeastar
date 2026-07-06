@@ -6,7 +6,7 @@
   "supportURL": "https://tomspestcontrol.com.au",
   "supportEmail": "office@tomspestcontrol.com.au",
   "oauth": {
-    "scope": "vendor read_jobs read_customers manage_customers"
+    "scope": "vendor read_jobs read_customers manage_customers read_customer_contacts"
   },
   "menuItems": [
     {
