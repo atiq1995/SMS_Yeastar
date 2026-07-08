@@ -120,6 +120,40 @@ export async function listJobRecipients(
   return out;
 }
 
+export async function listSmsTemplates(accessToken: string): Promise<{ id: string; name: string; body: string }[]> {
+  const res = await sm8Fetch("/api_1.0/smstemplate.json", accessToken);
+  if (!res.ok) {
+    console.warn("listSmsTemplates failed", res.status);
+    return [];
+  }
+  const data = (await res.json()) as unknown;
+  if (!Array.isArray(data)) return [];
+  return data
+    .filter((t) => t && typeof t === "object" && ((t as Record<string, unknown>).active === 1 || (t as Record<string, unknown>).active === "1"))
+    .map((t) => {
+      const row = t as Record<string, unknown>;
+      return {
+        id: String(row.uuid ?? ""),
+        name: String(row.name ?? "Untitled"),
+        body: String(row.message ?? ""),
+      };
+    })
+    .filter((t) => t.id && t.body)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function getVendorName(accessToken: string): Promise<string | undefined> {
+  const res = await sm8Fetch("/api_1.0/vendor.json", accessToken);
+  if (!res.ok) return undefined;
+  const data = (await res.json()) as unknown;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (row && typeof row === "object") {
+    const name = (row as Record<string, unknown>).name;
+    if (typeof name === "string" && name.trim()) return name.trim();
+  }
+  return undefined;
+}
+
 async function listFiltered(accessToken: string, resource: string, filter: string): Promise<Record<string, unknown>[]> {
   const res = await sm8Fetch(`/api_1.0/${resource}.json?$filter=${encodeURIComponent(filter)}`, accessToken);
   if (!res.ok) {

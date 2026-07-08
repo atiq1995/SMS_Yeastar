@@ -11,9 +11,9 @@ import {
 } from "../db/repository.js";
 import { sendSms } from "../yeastar/send.js";
 import { processJobEvent } from "../workers/process-event.js";
-import { getJob, getCompany, jobCompanyUuid } from "./api.js";
+import { getJob, getCompany, jobCompanyUuid, getVendorName } from "./api.js";
 import { resolveAccessToken } from "./oauth.js";
-import { renderTemplate } from "../engine/templates.js";
+import { renderSmsBody } from "../engine/templates.js";
 import { buildJobTemplateContext } from "../engine/job-context.js";
 import { enqueueSend } from "../yeastar/queue.js";
 
@@ -146,7 +146,12 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
         return;
       }
       const company = await getCompany(token, cu);
-      const text = renderTemplate(message, buildJobTemplateContext(j, company, toNumber, recipientName));
+      const vendorName = await getVendorName(token);
+      const text = renderSmsBody(
+        message,
+        buildJobTemplateContext(j, company, toNumber, recipientName),
+        vendorName
+      );
       sendInvokeJson(res, { ok: true, queued: true });
       void enqueueSend(toNumber, text)
         .then((result) => {

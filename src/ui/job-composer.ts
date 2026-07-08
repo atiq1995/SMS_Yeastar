@@ -1,6 +1,6 @@
 import { SHARED_STYLES, COMPOSER_STYLES } from "./styles.js";
-import { listTemplates, listJobThread } from "../db/repository.js";
-import { getJob, getCompany, jobCompanyUuid, listJobRecipients } from "../servicem8/api.js";
+import { listJobThread } from "../db/repository.js";
+import { getJob, getCompany, jobCompanyUuid, listJobRecipients, listSmsTemplates, getVendorName } from "../servicem8/api.js";
 import { resolveAccessToken } from "../servicem8/oauth.js";
 import { buildJobTemplateContext } from "../engine/job-context.js";
 
@@ -22,9 +22,10 @@ export type JobComposerModel = {
   customerName: string;
   address: string;
   recipients: { mobile: string; label: string; name: string }[];
-  templates: { id: number; name: string; body: string }[];
+  templates: { id: string; name: string; body: string }[];
   thread: { dir: "out" | "in"; body: string; at: string; number: string }[];
-  defaultTemplateId: number | null;
+  defaultTemplateId: string | null;
+  vendorName: string;
   error?: string;
   hint?: string;
 };
@@ -42,9 +43,10 @@ export async function loadJobComposerModel(
     customerName: "",
     address: "",
     recipients: [],
-    templates: listTemplates(),
+    templates: [],
     thread: [],
     defaultTemplateId: null,
+    vendorName: "",
     error,
     hint,
   });
@@ -64,8 +66,11 @@ export async function loadJobComposerModel(
     const company = await getCompany(token, companyUuid);
     const ctx = buildJobTemplateContext(job, company);
     const recipients = await listJobRecipients(token, job, company);
-    const templates = listTemplates();
-    const thread = listJobThread(jobUuid);
+    const [templates, thread, vendorName] = await Promise.all([
+      listSmsTemplates(token),
+      Promise.resolve(listJobThread(jobUuid)),
+      getVendorName(token),
+    ]);
     const enRoute = templates.find((t) => /en.?route/i.test(t.name));
 
     return {
@@ -78,6 +83,7 @@ export async function loadJobComposerModel(
       recipients,
       templates,
       thread,
+      vendorName: vendorName ?? "",
       defaultTemplateId: enRoute?.id ?? templates[0]?.id ?? null,
     };
   } catch (e) {
@@ -135,12 +141,12 @@ export function renderJobComposerHtml(model: JobComposerModel): string {
   if (model.error) return renderError(model);
 
   const tplJson = JSON.stringify(model.templates.map((t) => ({ id: t.id, name: t.name, body: t.body })));
-  const recipientsJson = JSON.stringify(model.recipients);
   const ctxJson = JSON.stringify({
     customerName: model.recipients[0]?.name ?? model.customerName,
     jobNumber: model.jobNumber,
     status: model.status,
     address: model.address,
+    vendorName: model.vendorName,
   });
   const defaultTpl = model.defaultTemplateId ?? "";
 
@@ -166,19 +172,14 @@ export function renderJobComposerHtml(model: JobComposerModel): string {
     <button type="button" class="icon-btn" title="Close" id="btnClose">×</button>
   </div>
 
-  <dl class="job-context">
-    <div><dt>Job</dt><dd>${esc(model.jobNumber)}</dd></div>
-    <div><dt>Status</dt><dd>${esc(model.status || "—")}</dd></div>
-    <div><dt>Customer</dt><dd>${esc(model.customerName)}</dd></div>
-    <div><dt>Address</dt><dd>${esc(model.address)}</dd></div>
-  </dl>
-
   <div id="toast" class="toast" style="margin:12px 16px 0"></div>
 
   ${
     noRecipients
       ? `<div class="composer-error"><strong>No mobile number found</strong><p>Add a mobile on the job contact or company contact in ServiceM8.</p></div>`
-      : `<div class="composer-body">
+      : !model.templates.length
+        ? `<div class="composer-error"><strong>No SMS templates found</strong><p>Reconnect OAuth (Settings) so the add-on can read ServiceM8 templates, or add templates in ServiceM8.</p></div>`
+        : `<div class="composer-body">
     <label for="recipient">To</label>
     <select id="recipient">${recipientOptions}</select>
 
@@ -207,7 +208,7 @@ export function renderJobComposerHtml(model: JobComposerModel): string {
 
   <div class="composer-footer">
     <button type="button" class="secondary" id="btnCancel">Cancel</button>
-    <button type="button" id="btnSend"${noRecipients ? " disabled" : ""}>Send SMS</button>
+    <button type="button" id="btnSend"${noRecipients || !model.templates.length ? " disabled" : ""}>Send SMS</button>
   </div>
 </div>
 
@@ -243,7 +244,22 @@ function escHtml(s) {
 }
 
 function renderPreview(text) {
-  return text.replace(/\\{\\{(\\w+)\\}\\}/g, (_, k) => CTX[k] ?? '');
+  const customer = CTX.customerName || '';
+  const parts = customer.trim().split(/\\s+/);
+  const sm8 = {
+    'job.generated_job_id': CTX.jobNumber || '',
+    'job.status': CTX.status || '',
+    'job.job_address': CTX.address || '',
+    'job.address': CTX.address || '',
+    'job.contact_first': parts[0] || customer,
+    'job.contact_last': parts.slice(1).join(' '),
+    'job.contact_name': customer,
+    'company.name': customer,
+    'vendor.name': CTX.vendorName || '',
+  };
+  let out = text.replace(/\\{([a-z0-9_.]+)\\}/gi, (_, k) => sm8[k.toLowerCase()] ?? '{' + k + '}');
+  out = out.replace(/\\{\\{(\\w+)\\}\\}/g, (_, k) => CTX[k] ?? '');
+  return out;
 }
 
 function showToast(text, err) {
