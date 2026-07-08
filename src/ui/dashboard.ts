@@ -9,12 +9,14 @@ import {
 } from "../db/repository.js";
 import { env } from "../config/env.js";
 import { isTestMode, testModeLabel } from "../yeastar/guard.js";
+import { resolveAccessToken } from "../servicem8/oauth.js";
+import { createSmsTemplate, listSmsTemplates } from "../servicem8/api.js";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-export function renderDashboardHtml(accountUuid: string): string {
+export async function renderDashboardHtml(accountUuid: string, auth?: { accessToken?: string }): Promise<string> {
   const templates = listTemplates();
   const rules = listRules();
   const outbound = listOutbound(50);
@@ -22,8 +24,11 @@ export function renderDashboardHtml(accountUuid: string): string {
   const since = new Date(Date.now() - 7 * 864e5).toISOString();
   const sent7d = countOutboundSince(since);
   const enRoute = getSetting("en_route_statuses") ?? "En Route,Dispatched";
+  const token = await resolveAccessToken(accountUuid, auth);
+  const importedTemplates = token ? await listSmsTemplates(token) : [];
 
   const tplJson = JSON.stringify(templates.map((t) => ({ id: t.id, name: t.name, body: t.body })));
+  const importedTplJson = JSON.stringify(importedTemplates);
   const rulesJson = JSON.stringify(
     rules.map((r) => ({
       id: r.id,
@@ -94,11 +99,25 @@ export function renderDashboardHtml(accountUuid: string): string {
   <div class="panel-head">
     <div>
       <h2>Message templates</h2>
-      <p class="muted" style="margin:4px 0 0">SMS text sent when a rule fires. Edit or delete from the list.</p>
+      <p class="muted" style="margin:4px 0 0">Automation rules still use internal templates. Job Send SMS uses imported ServiceM8 SMS templates.</p>
     </div>
-    <button type="button" id="addTemplate" class="secondary">+ Add template</button>
+    <div class="row-actions">
+      <button type="button" id="toggleImportedTemplates" class="secondary">Show imported templates</button>
+      <button type="button" id="addImportedTemplate" class="secondary">+ Add ServiceM8 template</button>
+      <button type="button" id="toggleLocalTemplates" class="secondary">Show internal templates</button>
+    </div>
   </div>
-  <div class="card table-wrap" style="padding:0">
+  <div class="card" id="importedTemplatesCard" style="display:none">
+    <div class="table-wrap" style="padding:0">
+      <table>
+        <thead>
+          <tr><th>Name</th><th>Message preview</th></tr>
+        </thead>
+        <tbody id="importedTemplateList"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card table-wrap" id="localTemplatesCard" style="padding:0;display:none">
     <table>
       <thead>
         <tr><th>Name</th><th>Message preview</th><th></th></tr>
@@ -107,7 +126,7 @@ export function renderDashboardHtml(accountUuid: string): string {
     </table>
   </div>
   <div class="actions">
-    <button type="button" id="saveTemplates">Save templates</button>
+    <button type="button" id="saveTemplates" style="display:none">Save templates</button>
     <span id="templatesToast" class="toast"></span>
   </div>
 </div>
@@ -164,6 +183,22 @@ export function renderDashboardHtml(accountUuid: string): string {
   </div>
 </div>
 
+<div id="importedTemplateModal" class="modal-backdrop" aria-hidden="true">
+  <div class="modal" role="dialog" aria-labelledby="importedTemplateModalTitle">
+    <h3 id="importedTemplateModalTitle">Add ServiceM8 template</h3>
+    <label for="importedTplName">Template name</label>
+    <input type="text" id="importedTplName" placeholder="e.g. Quote follow up" />
+    <label for="importedTplBody">Message</label>
+    <textarea id="importedTplBody" rows="5" placeholder="Hi {job.contact_first}, ..."></textarea>
+    <label>Live preview</label>
+    <div class="preview-box" id="importedTplPreview"><strong>Sample SMS</strong><span></span></div>
+    <div class="modal-actions">
+      <button type="button" class="secondary" id="importedTplCancel">Cancel</button>
+      <button type="button" id="importedTplSave">Save template</button>
+    </div>
+  </div>
+</div>
+
 
 <script>
 let client = null;
@@ -187,6 +222,7 @@ const SAMPLE = {
 };
 
 let templates = ${tplJson};
+const importedTemplates = ${importedTplJson};
 let rules = ${rulesJson};
 const persistedTplIds = new Set(${JSON.stringify(templates.map((t) => t.id))});
 let nextTplId = ${maxTplId + 1};
@@ -204,6 +240,19 @@ function renderPreview(body) {
 function snippet(body) {
   const text = renderPreview(body);
   return text.length > 72 ? text.slice(0, 72) + '…' : text;
+}
+
+function renderImportedPreview(body) {
+  const first = String(SAMPLE.customerName || '').trim().split(/\s+/)[0] || SAMPLE.customerName;
+  return String(body)
+    .replace(/\{job\.contact_first\}/gi, first)
+    .replace(/\{job\.contact_name\}/gi, SAMPLE.customerName)
+    .replace(/\{job\.generated_job_id\}/gi, SAMPLE.jobNumber)
+    .replace(/\{job\.status\}/gi, SAMPLE.status)
+    .replace(/\{job\.job_address\}/gi, SAMPLE.address)
+    .replace(/\{job\.address\}/gi, SAMPLE.address)
+    .replace(/\{vendor\.name\}/gi, SAMPLE.companyName)
+    .replace(/\{company\.name\}/gi, SAMPLE.customerName);
 }
 
 function showToast(id, msg, err) {
@@ -304,6 +353,20 @@ function renderTemplates() {
   });
 }
 
+function renderImportedTemplates() {
+  const el = document.getElementById('importedTemplateList');
+  if (!importedTemplates.length) {
+    el.innerHTML = '<tr><td colspan="2" class="empty">No imported ServiceM8 templates found</td></tr>';
+    return;
+  }
+  el.innerHTML = importedTemplates.map((t) =>
+    '<tr>' +
+    '<td><strong>' + escHtml(t.name) + '</strong></td>' +
+    '<td class="tpl-snippet" title="' + escHtml(renderImportedPreview(t.body)) + '">' + escHtml(renderImportedPreview(t.body)) + '</td>' +
+    '</tr>'
+  ).join('');
+}
+
 function openTemplateModal(id) {
   editingTplId = id ?? null;
   const modal = document.getElementById('templateModal');
@@ -375,6 +438,53 @@ function setupTemplateModal() {
   });
 }
 
+function updateImportedModalPreview() {
+  document.querySelector('#importedTplPreview span').textContent =
+    renderImportedPreview(document.getElementById('importedTplBody').value);
+}
+
+function setupImportedTemplateModal() {
+  const modal = document.getElementById('importedTemplateModal');
+  document.getElementById('addImportedTemplate').addEventListener('click', () => {
+    document.getElementById('importedTplName').value = '';
+    document.getElementById('importedTplBody').value = 'Hi {job.contact_first}, ';
+    updateImportedModalPreview();
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden', 'false');
+    document.getElementById('importedTplName').focus();
+  });
+  document.getElementById('importedTplCancel').addEventListener('click', () => {
+    modal.classList.remove('open');
+    modal.setAttribute('aria-hidden', 'true');
+  });
+  modal.addEventListener('click', (e) => {
+    if (e.target.id === 'importedTemplateModal') {
+      modal.classList.remove('open');
+      modal.setAttribute('aria-hidden', 'true');
+    }
+  });
+  document.getElementById('importedTplBody').addEventListener('input', updateImportedModalPreview);
+  document.getElementById('importedTplSave').addEventListener('click', async () => {
+    const name = document.getElementById('importedTplName').value.trim();
+    const body = document.getElementById('importedTplBody').value.trim();
+    if (!name || !body) {
+      showToast('templatesToast', 'Name and message are required', true);
+      return;
+    }
+    try {
+      const res = await invoke('sms_dashboard_save', { section: 'imported_templates', templates: [{ name, body }] });
+      if (res && res.ok !== false) {
+        showToast('templatesToast', 'ServiceM8 template added');
+        setTimeout(() => location.reload(), 800);
+      } else {
+        showToast('templatesToast', JSON.stringify(res), true);
+      }
+    } catch (e) {
+      showToast('templatesToast', String(e), true);
+    }
+  });
+}
+
 function deleteTemplate(id) {
   if (templates.length <= 1) { alert('Keep at least one template.'); return; }
   const used = rules.some((r) => r.template_id === id);
@@ -388,7 +498,23 @@ function deleteTemplate(id) {
   renderRules();
 }
 
-document.getElementById('addTemplate').addEventListener('click', () => openTemplateModal(null));
+document.getElementById('toggleImportedTemplates').addEventListener('click', () => {
+  const card = document.getElementById('importedTemplatesCard');
+  const btn = document.getElementById('toggleImportedTemplates');
+  const open = card.style.display !== 'none';
+  card.style.display = open ? 'none' : 'block';
+  btn.textContent = open ? 'Show imported templates' : 'Hide imported templates';
+});
+document.getElementById('toggleLocalTemplates').addEventListener('click', () => {
+  const card = document.getElementById('localTemplatesCard');
+  const btn = document.getElementById('toggleLocalTemplates');
+  const saveBtn = document.getElementById('saveTemplates');
+  const open = card.style.display !== 'none';
+  card.style.display = open ? 'none' : 'block';
+  saveBtn.style.display = open ? 'none' : 'inline-block';
+  btn.textContent = open ? 'Show internal templates' : 'Hide internal templates';
+});
+document.getElementById('localTemplatesCard').style.display = 'none';
 document.getElementById('addRule').addEventListener('click', () => {
   rules.push({
     id: nextRuleId++,
@@ -463,7 +589,9 @@ document.getElementById('testYeastar')?.addEventListener('click', async () => {
 });
 
 setupTemplateModal();
+setupImportedTemplateModal();
 renderTemplates();
+renderImportedTemplates();
 renderRules();
 </script>
 </body></html>`;

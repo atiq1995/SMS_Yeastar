@@ -12,11 +12,12 @@ import {
 import { sendSms } from "../yeastar/send.js";
 import { env } from "../config/env.js";
 import { processJobEvent } from "../workers/process-event.js";
-import { getJob, getCompany, jobCompanyUuid, getVendorName } from "./api.js";
+import { getJob, getCompany, jobCompanyUuid, createJobNote, createSmsTemplate } from "./api.js";
 import { resolveAccessToken } from "./oauth.js";
 import { renderSmsBody } from "../engine/templates.js";
 import { buildJobTemplateContext } from "../engine/job-context.js";
 import { enqueueSend } from "../yeastar/queue.js";
+import { guardOutbound } from "../yeastar/guard.js";
 
 function accountUuid(payload: AddonJwt, args: Record<string, unknown>): string {
   return (
@@ -75,7 +76,7 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
 
   try {
     if (event === "sms_dashboard_settings") {
-      sendEventHtml(res, renderDashboardHtml(acct));
+      sendEventHtml(res, await renderDashboardHtml(acct, payload.auth));
       return;
     }
     if (event === "sms_dashboard_action") {
@@ -90,6 +91,20 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
       if (section === "templates" && Array.isArray(args.templates)) {
         for (const t of args.templates as { id?: number; name: string; body: string }[]) {
           upsertTemplate(t.name, t.body, t.id);
+        }
+      }
+      if (section === "imported_templates" && Array.isArray(args.templates)) {
+        const token = await resolveAccessToken(acct, payload.auth);
+        if (!token) {
+          sendInvokeJson(res, { ok: false, error: "no_oauth" });
+          return;
+        }
+        for (const t of args.templates as { name: string; body: string }[]) {
+          const result = await createSmsTemplate(token, { name: t.name, message: t.body });
+          if (!result.ok) {
+            sendInvokeJson(res, { ok: false, error: result.error });
+            return;
+          }
         }
       }
       if (section === "rules" && Array.isArray(args.rules)) {
@@ -148,24 +163,50 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
         return;
       }
       const company = await getCompany(token, cu);
-      const vendorName = await getVendorName(token);
-      const text = renderSmsBody(
-        message,
-        buildJobTemplateContext(j, company, toNumber, recipientName),
-        vendorName
-      );
+      const text = renderSmsBody(message, buildJobTemplateContext(j, company, toNumber, recipientName));
+      const guarded = guardOutbound(toNumber, text, jobId);
+      if (!guarded.ok) {
+        insertOutbound({
+          account_uuid: acct,
+          job_uuid: jobId,
+          to_number: toNumber,
+          body: text,
+          status: "blocked_test_mode",
+          provider_response: guarded.reason,
+        });
+        sendInvokeJson(res, { error: guarded.reason });
+        return;
+      }
       sendInvokeJson(res, { ok: true, queued: true });
-      void enqueueSend(toNumber, text, { jobUuid: jobId })
+      void enqueueSend(guarded.destination, guarded.message, { jobUuid: jobId })
         .then((result) => {
+          const status = guarded.redirected
+            ? result.accepted
+              ? result.dryRun
+                ? "test_redirected_dry_run"
+                : "test_redirected"
+              : "failed"
+            : result.accepted
+              ? result.dryRun
+                ? "dry_run"
+                : "sent"
+              : "failed";
           insertOutbound({
             account_uuid: acct,
             job_uuid: jobId,
-            to_number: toNumber,
+            to_number: guarded.destination,
             body: text,
-            status: result.accepted ? (result.dryRun ? "dry_run" : "sent") : "failed",
+            status,
             provider_response: result.rawResponse,
           });
-          console.log("sms sent", jobId, toNumber, result.accepted);
+          if (result.accepted) {
+            void createJobNote(
+              token,
+              jobId,
+              `SMS sent to ${guarded.destination}${guarded.redirected ? ` (test redirect from ${toNumber})` : ""}: ${text}`
+            ).catch((err) => console.error("job note failed", err));
+          }
+          console.log("sms sent", jobId, guarded.destination, result.accepted);
         })
         .catch((err) => console.error("sms send failed", err));
       return;

@@ -10,6 +10,8 @@ import { buildJobTemplateContext } from "../engine/job-context.js";
 import { renderTemplate } from "../engine/templates.js";
 import { evaluateRules, inferTrigger } from "../engine/rules.js";
 import { enqueueSend } from "../yeastar/queue.js";
+import { createJobNote } from "../servicem8/api.js";
+import { guardOutbound } from "../yeastar/guard.js";
 
 export type ProcessInput = {
   account_uuid: string;
@@ -55,16 +57,47 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
   if (!mobile) return { sent: false, reason: "no_mobile" };
 
   const body = renderTemplate(tpl.body, { ...ctx, status });
-  const result = await enqueueSend(mobile, body, { jobUuid });
+  const guarded = guardOutbound(mobile, body, jobUuid);
+  if (!guarded.ok) {
+    insertOutbound({
+      account_uuid: input.account_uuid,
+      job_uuid: jobUuid,
+      to_number: mobile,
+      body,
+      status: "blocked_test_mode",
+      provider_response: guarded.reason,
+      idempotency_key: input.idempotency_key + ":out",
+    });
+    return { sent: false, reason: guarded.reason };
+  }
+  const result = await enqueueSend(guarded.destination, guarded.message, { jobUuid });
+  const statusValue = guarded.redirected
+    ? result.accepted
+      ? result.dryRun
+        ? "test_redirected_dry_run"
+        : "test_redirected"
+      : "failed"
+    : result.accepted
+      ? result.dryRun
+        ? "dry_run"
+        : "sent"
+      : "failed";
   insertOutbound({
     account_uuid: input.account_uuid,
     job_uuid: jobUuid,
-    to_number: mobile,
+    to_number: guarded.destination,
     body,
-    status: result.accepted ? (result.dryRun ? "dry_run" : "sent") : "failed",
+    status: statusValue,
     provider_response: result.rawResponse,
     idempotency_key: input.idempotency_key + ":out",
   });
+  if (result.accepted) {
+    void createJobNote(
+      token,
+      jobUuid,
+      `SMS sent to ${guarded.destination}${guarded.redirected ? ` (test redirect from ${mobile})` : ""}: ${body}`
+    ).catch((err) => console.error("job note failed", err));
+  }
 
   return { sent: result.accepted, reason: result.accepted ? undefined : result.errorCode };
 }

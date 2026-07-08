@@ -154,6 +154,53 @@ export async function getVendorName(accessToken: string): Promise<string | undef
   return undefined;
 }
 
+export async function createSmsTemplate(
+  accessToken: string,
+  input: { name: string; message: string }
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const base = env.servicem8ApiBaseUrl.replace(/\/$/, "");
+  const res = await fetch(`${base}/api_1.0/smstemplate.json`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ name: input.name, message: input.message }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) {
+    return { ok: false, error: `createSmsTemplate ${res.status}: ${(await res.text()).slice(0, 300)}` };
+  }
+  return { ok: true };
+}
+
+export async function createJobNote(
+  accessToken: string,
+  jobUuid: string,
+  note: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const base = env.servicem8ApiBaseUrl.replace(/\/$/, "");
+  const res = await fetch(`${base}/api_1.0/note.json`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      related_object: "job",
+      related_object_uuid: jobUuid,
+      note,
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) {
+    return { ok: false, error: `createJobNote ${res.status}: ${(await res.text()).slice(0, 300)}` };
+  }
+  return { ok: true };
+}
+
 async function listFiltered(accessToken: string, resource: string, filter: string): Promise<Record<string, unknown>[]> {
   const res = await sm8Fetch(`/api_1.0/${resource}.json?$filter=${encodeURIComponent(filter)}`, accessToken);
   if (!res.ok) {
