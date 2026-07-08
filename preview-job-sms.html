@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Send SMS — Job composer preview</title>
+  <style>
+    * { box-sizing: border-box; }
+    html { color-scheme: light; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 24px;
+      background: #e8eaed;
+      color: #1f2937;
+      min-height: 100vh;
+    }
+
+    /* Fake ServiceM8 page behind the modal */
+    .sm8-chrome {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .preview-note {
+      background: #fef3c7;
+      border: 1px solid #fcd34d;
+      color: #92400e;
+      padding: 10px 14px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .sm8-job-bar {
+      background: #fff;
+      border: 1px solid #d1d5db;
+      border-radius: 8px 8px 0 0;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      opacity: 0.55;
+      pointer-events: none;
+    }
+    .sm8-job-bar .back { color: #6b7280; font-size: 18px; }
+    .sm8-job-bar h2 { margin: 0; font-size: 15px; font-weight: 600; color: #111827; }
+    .sm8-job-bar .badge {
+      font-size: 11px;
+      background: #dbeafe;
+      color: #1d4ed8;
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    .sm8-backdrop {
+      background: rgba(17, 24, 39, 0.45);
+      border: 1px solid #d1d5db;
+      border-top: none;
+      border-radius: 0 0 8px 8px;
+      padding: 32px 16px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 520px;
+    }
+
+    /* The actual composer — what opens in the job modal */
+    .composer {
+      width: 100%;
+      max-width: 480px;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.18);
+      border: 1px solid #e5e7eb;
+      overflow: hidden;
+    }
+    .composer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      border-bottom: 1px solid #e5e7eb;
+      background: #fafafa;
+    }
+    .composer-header h1 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+      color: #111827;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .composer-header h1 svg { flex-shrink: 0; }
+    .icon-btn {
+      background: none;
+      border: none;
+      color: #6b7280;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      font-size: 18px;
+      line-height: 1;
+    }
+    .icon-btn:hover { background: #f3f4f6; color: #374151; }
+
+    .job-context {
+      padding: 12px 16px;
+      background: #f8fafc;
+      border-bottom: 1px solid #e5e7eb;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 16px;
+      font-size: 12px;
+    }
+    .job-context dt { color: #6b7280; margin: 0; font-weight: 500; }
+    .job-context dd { margin: 2px 0 0; color: #111827; font-weight: 600; }
+
+    .composer-body { padding: 16px; }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 4px;
+    }
+    select, textarea, input[type="text"] {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      background: #fff;
+      color: #1f2937;
+      font-size: 13px;
+      font-family: inherit;
+      margin-bottom: 12px;
+    }
+    select:focus, textarea:focus, input:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    }
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+      line-height: 1.45;
+      margin-bottom: 4px;
+    }
+    .hint { font-size: 11px; color: #6b7280; margin: -4px 0 12px; }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .chip {
+      padding: 3px 8px;
+      font-size: 11px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+      border-radius: 999px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .chip:hover { background: #dbeafe; }
+
+    .char-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: #6b7280;
+      margin-bottom: 12px;
+    }
+    .char-row.warn { color: #b45309; }
+    .char-row.over { color: #b91c1c; font-weight: 600; }
+
+    .preview-bubble {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #14532d;
+      margin-bottom: 14px;
+      position: relative;
+    }
+    .preview-bubble::before {
+      content: 'Preview';
+      display: block;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #166534;
+      margin-bottom: 4px;
+    }
+
+    .thread {
+      border-top: 1px solid #e5e7eb;
+      margin: 0 -16px;
+      padding: 12px 16px 0;
+    }
+    .thread h3 {
+      margin: 0 0 10px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #6b7280;
+    }
+    .msg {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 10px;
+      max-width: 88%;
+    }
+    .msg.out { align-self: flex-end; align-items: flex-end; margin-left: auto; }
+    .msg.in { align-self: flex-start; }
+    .msg-bubble {
+      padding: 8px 11px;
+      border-radius: 12px;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    .msg.out .msg-bubble {
+      background: #3b82f6;
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .msg.in .msg-bubble {
+      background: #f3f4f6;
+      color: #1f2937;
+      border-bottom-left-radius: 4px;
+    }
+    .msg-meta {
+      font-size: 10px;
+      color: #9ca3af;
+      margin-top: 3px;
+      padding: 0 4px;
+    }
+
+    .composer-footer {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      padding: 12px 16px;
+      border-top: 1px solid #e5e7eb;
+      background: #fafafa;
+    }
+    button {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+    }
+    button.primary {
+      background: #3b82f6;
+      color: #fff;
+    }
+    button.primary:hover { background: #2563eb; }
+    button.primary:disabled { opacity: 0.45; cursor: not-allowed; }
+    button.secondary {
+      background: #fff;
+      color: #374151;
+      border: 1px solid #d1d5db;
+    }
+    button.secondary:hover { background: #f9fafb; }
+
+    .toast {
+      display: none;
+      margin: 0 16px 12px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      background: #ecfdf5;
+      color: #065f46;
+      border: 1px solid #a7f3d0;
+    }
+    .toast.show { display: block; }
+    .toast.err { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
+
+    .empty-thread {
+      text-align: center;
+      padding: 16px;
+      color: #9ca3af;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="sm8-chrome">
+    <div class="preview-note">
+      <strong>Preview only</strong> — this is the proposed <em>job modal</em> composer (replaces opening the full dashboard from a job).
+      Open this file in your browser: <code>preview-job-sms.html</code>. Send is simulated; no code changes yet.
+    </div>
+
+    <div class="sm8-job-bar">
+      <span class="back">‹</span>
+      <h2>Job J-1042 — Smith Residence</h2>
+      <span class="badge">En Route</span>
+    </div>
+    <div class="sm8-backdrop">
+      <div class="composer" role="dialog" aria-labelledby="composerTitle">
+        <div class="composer-header">
+          <h1 id="composerTitle">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            Send SMS
+          </h1>
+          <button type="button" class="icon-btn" title="Close" id="btnClose">×</button>
+        </div>
+
+        <dl class="job-context">
+          <div><dt>Job</dt><dd id="ctxJob">J-1042</dd></div>
+          <div><dt>Status</dt><dd id="ctxStatus">En Route</dd></div>
+          <div><dt>Customer</dt><dd id="ctxCustomer">Smith Residence</dd></div>
+          <div><dt>Address</dt><dd id="ctxAddress">12 Oak St, Brisbane</dd></div>
+        </dl>
+
+        <div id="toast" class="toast"></div>
+
+        <div class="composer-body">
+          <label for="recipient">To</label>
+          <select id="recipient">
+            <option value="0412345678" data-name="John Smith">John Smith — 0412 345 678 (job contact)</option>
+            <option value="0498765432" data-name="Jane Smith">Jane Smith — 0498 765 432 (company)</option>
+          </select>
+
+          <label for="template">Template</label>
+          <select id="template">
+            <option value="">— Custom message —</option>
+            <option value="1">En route</option>
+            <option value="2">Status update</option>
+            <option value="3">Job created</option>
+            <option value="4">Completed</option>
+          </select>
+
+          <label for="message">Message</label>
+          <div class="chips" id="chips"></div>
+          <textarea id="message" placeholder="Type your message…"></textarea>
+          <div class="char-row" id="charRow">
+            <span id="segInfo">1 SMS segment</span>
+            <span id="charCount">0 / 160</span>
+          </div>
+
+          <div class="preview-bubble" id="preview">Hi John Smith, our technician is on the way to 12 Oak St, Brisbane for job J-1042.</div>
+
+          <div class="thread">
+            <h3>Recent messages (this job)</h3>
+            <div id="thread">
+              <div class="msg out">
+                <div class="msg-bubble">Hi John, we received your job J-1042. We will be in touch soon. — Tom's Pest Control</div>
+                <div class="msg-meta">Sent · 2 days ago</div>
+              </div>
+              <div class="msg in">
+                <div class="msg-bubble">Thanks, what time roughly?</div>
+                <div class="msg-meta">Received · 2 days ago</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="composer-footer">
+          <button type="button" class="secondary" id="btnCancel">Cancel</button>
+          <button type="button" class="primary" id="btnSend">Send SMS</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const TEMPLATES = {
+  1: "Hi {{customerName}}, our technician is on the way to {{address}} for job {{jobNumber}}.",
+  2: "Hi {{customerName}}, job {{jobNumber}} is now: {{status}}. — Tom's Pest Control",
+  3: "Hi {{customerName}}, we received your job {{jobNumber}}. We will be in touch soon. — Tom's Pest Control",
+  4: "Hi {{customerName}}, job {{jobNumber}} is complete. Thank you for choosing Tom's Pest Control.",
+};
+const VARS = [
+  { key: 'customerName', label: 'Customer' },
+  { key: 'jobNumber', label: 'Job #' },
+  { key: 'status', label: 'Status' },
+  { key: 'address', label: 'Address' },
+];
+const CTX = {
+  customerName: 'John Smith',
+  jobNumber: 'J-1042',
+  status: 'En Route',
+  address: '12 Oak St, Brisbane',
+};
+
+const el = (id) => document.getElementById(id);
+const msgEl = el('message');
+const tplEl = el('template');
+const recipientEl = el('recipient');
+const previewEl = el('preview');
+const charCountEl = el('charCount');
+const charRowEl = el('charRow');
+const segInfoEl = el('segInfo');
+const toastEl = el('toast');
+
+function renderPreview(text) {
+  return text.replace(/\{\{(\w+)\}\}/g, (_, k) => CTX[k] ?? '');
+}
+
+function updateCtxFromRecipient() {
+  const opt = recipientEl.selectedOptions[0];
+  CTX.customerName = opt?.dataset.name || 'Customer';
+  refresh();
+}
+
+function refresh() {
+  const rendered = renderPreview(msgEl.value);
+  previewEl.textContent = rendered || '(empty)';
+  const len = rendered.length;
+  const segs = len === 0 ? 0 : len <= 160 ? 1 : Math.ceil(len / 153);
+  charCountEl.textContent = len + ' / 160';
+  segInfoEl.textContent = segs <= 1 ? '1 SMS segment' : segs + ' SMS segments';
+  charRowEl.className = 'char-row' + (len > 160 ? ' warn' : '') + (len > 306 ? ' over' : '');
+  el('btnSend').disabled = !rendered.trim();
+}
+
+function showToast(text, err) {
+  toastEl.textContent = text;
+  toastEl.className = 'toast show' + (err ? ' err' : '');
+  setTimeout(() => { toastEl.className = 'toast'; }, 3500);
+}
+
+// Variable chips
+const chipsEl = el('chips');
+VARS.forEach((v) => {
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = 'chip';
+  chip.textContent = v.label;
+  chip.addEventListener('click', () => {
+    const tag = '{{' + v.key + '}}';
+    const start = msgEl.selectionStart ?? msgEl.value.length;
+    const end = msgEl.selectionEnd ?? start;
+    msgEl.value = msgEl.value.slice(0, start) + tag + msgEl.value.slice(end);
+    msgEl.focus();
+    msgEl.selectionStart = msgEl.selectionEnd = start + tag.length;
+    refresh();
+  });
+  chipsEl.appendChild(chip);
+});
+
+tplEl.addEventListener('change', () => {
+  const body = TEMPLATES[tplEl.value];
+  if (body) msgEl.value = body;
+  refresh();
+});
+
+recipientEl.addEventListener('change', updateCtxFromRecipient);
+msgEl.addEventListener('input', refresh);
+
+el('btnSend').addEventListener('click', () => {
+  const text = renderPreview(msgEl.value);
+  const to = recipientEl.selectedOptions[0]?.textContent || '';
+  showToast('Demo: SMS queued to ' + to.split('—')[0].trim());
+  const thread = el('thread');
+  const div = document.createElement('div');
+  div.className = 'msg out';
+  div.innerHTML =
+    '<div class="msg-bubble">' + text.replace(/</g, '&lt;') + '</div>' +
+    '<div class="msg-meta">Sent · just now</div>';
+  thread.appendChild(div);
+});
+
+el('btnCancel').addEventListener('click', () => showToast('Demo: modal would close'));
+el('btnClose').addEventListener('click', () => showToast('Demo: modal would close'));
+
+// Default template
+tplEl.value = '1';
+msgEl.value = TEMPLATES[1];
+refresh();
+</script>
+</body>
+</html>

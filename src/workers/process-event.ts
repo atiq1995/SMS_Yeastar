@@ -6,7 +6,8 @@ import {
   listRules,
   logEvent,
 } from "../db/repository.js";
-import { renderTemplate, type TemplateContext } from "../engine/templates.js";
+import { buildJobTemplateContext } from "../engine/job-context.js";
+import { renderTemplate } from "../engine/templates.js";
 import { evaluateRules, inferTrigger } from "../engine/rules.js";
 import { enqueueSend } from "../yeastar/queue.js";
 
@@ -18,30 +19,6 @@ export type ProcessInput = {
   status?: string;
   idempotency_key: string;
 };
-
-function jobContext(job: Record<string, unknown>, company: Record<string, unknown>, mobile?: string): TemplateContext {
-  const jobNumber =
-    (typeof job.generated_job_id === "string" && job.generated_job_id) ||
-    (typeof job.job_number === "string" && job.job_number) ||
-    String(job.uuid ?? "").slice(0, 8);
-  const status = typeof job.status === "string" ? job.status : undefined;
-  const address =
-    (typeof job.job_address === "string" && job.job_address) ||
-    (typeof job.address === "string" && job.address) ||
-    undefined;
-  const customerName =
-    (typeof company.name === "string" && company.name) ||
-    (typeof company.company_name === "string" && company.company_name) ||
-    "Customer";
-  return {
-    customerName,
-    jobNumber: String(jobNumber),
-    status,
-    address,
-    companyName: customerName,
-    mobile,
-  };
-}
 
 export async function processJobEvent(input: ProcessInput): Promise<{ sent: boolean; reason?: string }> {
   const dup = !logEvent({
@@ -66,7 +43,7 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
   if (!companyUuid) return { sent: false, reason: "no_company" };
   const company = await getCompany(token, companyUuid);
   const mobile = await resolveJobMobile(token, job, company);
-  const ctx = jobContext(job, company, mobile);
+  const ctx = buildJobTemplateContext(job, company, mobile);
   const status = input.status ?? ctx.status;
   const trigger = inferTrigger(input.event_type, status);
   if (!trigger) return { sent: false, reason: "no_trigger" };

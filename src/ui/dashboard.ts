@@ -13,7 +13,7 @@ function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-export function renderDashboardHtml(accountUuid: string, jobUuid?: string): string {
+export function renderDashboardHtml(accountUuid: string): string {
   const templates = listTemplates();
   const rules = listRules();
   const outbound = listOutbound(50);
@@ -162,13 +162,11 @@ export function renderDashboardHtml(accountUuid: string, jobUuid?: string): stri
   </div>
 </div>
 
-${jobUuid ? `<div style="margin-top:16px"><button type="button" id="sendJobSms">Send SMS for this job</button><pre id="sendOut"></pre></div>` : ""}
 
 <script>
 let client = null;
 try { client = SMClient.init(); } catch (e) { console.warn('SMClient', e); }
 const accountUuid = ${JSON.stringify(accountUuid)};
-const jobUuid = ${JSON.stringify(jobUuid ?? "")};
 
 const VARS = ['customerName', 'jobNumber', 'status', 'address', 'companyName', 'mobile'];
 const TRIGGERS = [
@@ -462,24 +460,9 @@ document.getElementById('testYeastar')?.addEventListener('click', async () => {
   }
 });
 
-document.getElementById('sendJobSms')?.addEventListener('click', async () => {
-  try {
-    const res = await invoke('sms_dashboard_send', { job_uuid: jobUuid });
-    document.getElementById('sendOut').textContent = res.queued
-      ? 'SMS queued — check Log tab in a few seconds.'
-      : JSON.stringify(res);
-  } catch (e) {
-    document.getElementById('sendOut').textContent = String(e);
-  }
-});
-
 setupTemplateModal();
 renderTemplates();
 renderRules();
 </script>
 </body></html>`;
-}
-
-export function renderJobActionHtml(accountUuid: string, jobUuid: string): string {
-  return renderDashboardHtml(accountUuid, jobUuid);
 }

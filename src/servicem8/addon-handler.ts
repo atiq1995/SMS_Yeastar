@@ -1,21 +1,20 @@
 import type { Request, Response } from "express";
 import { verifyServiceM8Jwt, type AddonJwt } from "./jwt.js";
-import { renderDashboardHtml, renderJobActionHtml } from "../ui/dashboard.js";
+import { renderDashboardHtml } from "../ui/dashboard.js";
+import { renderJobActionHtml } from "../ui/job-composer.js";
 import {
   setSetting,
   upsertTemplate,
   replaceRules,
-  getTemplate,
-  listRules,
   insertOutbound,
   getSingleOAuthTokens,
 } from "../db/repository.js";
 import { sendSms } from "../yeastar/send.js";
 import { processJobEvent } from "../workers/process-event.js";
-import { getJob, getCompany, jobCompanyUuid, resolveJobMobile } from "./api.js";
+import { getJob, getCompany, jobCompanyUuid } from "./api.js";
 import { resolveAccessToken } from "./oauth.js";
 import { renderTemplate } from "../engine/templates.js";
-import { evaluateRules } from "../engine/rules.js";
+import { buildJobTemplateContext } from "../engine/job-context.js";
 import { enqueueSend } from "../yeastar/queue.js";
 
 function accountUuid(payload: AddonJwt, args: Record<string, unknown>): string {
@@ -79,7 +78,7 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
       return;
     }
     if (event === "sms_dashboard_action") {
-      sendEventHtml(res, renderJobActionHtml(acct, job || ""));
+      sendEventHtml(res, await renderJobActionHtml(acct, job || "", payload.auth));
       return;
     }
     if (event === "sms_dashboard_save") {
@@ -120,8 +119,19 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
     }
     if (event === "sms_dashboard_send") {
       const jobId = (args.job_uuid as string) || (args.jobUUID as string) || job;
+      const toNumber = typeof args.to_number === "string" ? args.to_number.replace(/\s+/g, "") : "";
+      const message = typeof args.message === "string" ? args.message.trim() : "";
+      const recipientName = typeof args.recipient_name === "string" ? args.recipient_name : undefined;
       if (!jobId) {
         sendInvokeJson(res, { error: "missing_job_uuid" });
+        return;
+      }
+      if (!toNumber) {
+        sendInvokeJson(res, { error: "missing_to_number" });
+        return;
+      }
+      if (!message) {
+        sendInvokeJson(res, { error: "missing_message" });
         return;
       }
       const token = await resolveAccessToken(acct, payload.auth);
@@ -136,35 +146,19 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
         return;
       }
       const company = await getCompany(token, cu);
-      const mobile = await resolveJobMobile(token, j, company);
-      if (!mobile) {
-        sendInvokeJson(res, { error: "no_mobile", hint: "Add a mobile on the job contact or company contact in ServiceM8" });
-        return;
-      }
-      const status = typeof j.status === "string" ? j.status : "";
-      const rule = evaluateRules(listRules(), "status_changed", { status });
-      const tpl = rule ? getTemplate(rule.template_id) : undefined;
-      const body =
-        tpl?.body ||
-        `Update for job ${typeof j.generated_job_id === "string" ? j.generated_job_id : jobId}: ${status}`;
-      const text = renderTemplate(body, {
-        customerName: typeof company.name === "string" ? company.name : "Customer",
-        jobNumber: String(j.generated_job_id ?? jobId),
-        status,
-      });
-      // Respond before Yeastar queue wait — ServiceM8 invoke() times out otherwise
+      const text = renderTemplate(message, buildJobTemplateContext(j, company, toNumber, recipientName));
       sendInvokeJson(res, { ok: true, queued: true });
-      void enqueueSend(mobile, text)
+      void enqueueSend(toNumber, text)
         .then((result) => {
           insertOutbound({
             account_uuid: acct,
             job_uuid: jobId,
-            to_number: mobile,
+            to_number: toNumber,
             body: text,
             status: result.accepted ? (result.dryRun ? "dry_run" : "sent") : "failed",
             provider_response: result.rawResponse,
           });
-          console.log("sms sent", jobId, mobile, result.accepted);
+          console.log("sms sent", jobId, toNumber, result.accepted);
         })
         .catch((err) => console.error("sms send failed", err));
       return;

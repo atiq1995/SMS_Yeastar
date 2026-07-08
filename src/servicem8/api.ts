@@ -61,6 +61,65 @@ function pickPhone(record: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
+function pickName(record: Record<string, unknown>): string | undefined {
+  const first = typeof record.first === "string" ? record.first.trim() : "";
+  const last = typeof record.last === "string" ? record.last.trim() : "";
+  if (first || last) return `${first} ${last}`.trim();
+  for (const k of ["name", "contact_name", "full_name"]) {
+    const v = record[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return undefined;
+}
+
+export type SmsRecipient = { mobile: string; label: string; name: string };
+
+/** Job + company contacts with mobiles for the SMS composer */
+export async function listJobRecipients(
+  accessToken: string,
+  job: ServiceM8Job,
+  company: ServiceM8Company
+): Promise<SmsRecipient[]> {
+  const seen = new Set<string>();
+  const out: SmsRecipient[] = [];
+  const add = (mobile: string | undefined, name: string, label: string) => {
+    if (!mobile) return;
+    if (seen.has(mobile)) return;
+    seen.add(mobile);
+    out.push({ mobile, name, label });
+  };
+
+  const jobUuid = typeof job.uuid === "string" ? job.uuid : undefined;
+  if (jobUuid) {
+    for (const c of await listJobContacts(accessToken, jobUuid)) {
+      const name = pickName(c) || "Contact";
+      add(pickPhone(c), name, `${name} — job contact`);
+    }
+  }
+
+  const companyName =
+    (typeof company.name === "string" && company.name) ||
+    (typeof company.company_name === "string" && company.company_name) ||
+    "Company";
+  const companyUuid = jobCompanyUuid(job) || (typeof company.uuid === "string" ? company.uuid : undefined);
+  if (companyUuid) {
+    const contacts = await listCompanyContacts(accessToken, companyUuid);
+    const primary = contacts.find((c) => c.is_primary_contact === "1" || c.is_primary_contact === 1);
+    if (primary) {
+      const name = pickName(primary) || companyName;
+      add(pickPhone(primary), name, `${name} — primary contact`);
+    }
+    for (const c of contacts) {
+      if (c === primary) continue;
+      const name = pickName(c) || companyName;
+      add(pickPhone(c), name, `${name} — company contact`);
+    }
+  }
+
+  add(pickPhone(company), companyName, `${companyName} — company record`);
+  return out;
+}
+
 async function listFiltered(accessToken: string, resource: string, filter: string): Promise<Record<string, unknown>[]> {
   const res = await sm8Fetch(`/api_1.0/${resource}.json?$filter=${encodeURIComponent(filter)}`, accessToken);
   if (!res.ok) {

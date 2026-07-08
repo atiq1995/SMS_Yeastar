@@ -77,6 +77,27 @@ export function listOutbound(limit = 100): Record<string, unknown>[] {
   return db().prepare("SELECT * FROM outbound_messages ORDER BY id DESC LIMIT ?").all(limit) as Record<string, unknown>[];
 }
 
+export type ThreadMessage = { dir: "out" | "in"; body: string; at: string; number: string };
+
+export function listJobThread(jobUuid: string, limit = 20): ThreadMessage[] {
+  const outbound = db()
+    .prepare(
+      "SELECT body, created_at AS at, to_number AS number FROM outbound_messages WHERE job_uuid = ? ORDER BY id DESC LIMIT ?"
+    )
+    .all(jobUuid, limit) as { body: string; at: string; number: string }[];
+  const inbound = db()
+    .prepare(
+      "SELECT body, received_at AS at, from_number AS number FROM inbound_messages WHERE job_uuid = ? ORDER BY id DESC LIMIT ?"
+    )
+    .all(jobUuid, limit) as { body: string; at: string; number: string }[];
+  const merged: ThreadMessage[] = [
+    ...outbound.map((m) => ({ dir: "out" as const, body: m.body, at: m.at, number: m.number })),
+    ...inbound.map((m) => ({ dir: "in" as const, body: m.body, at: m.at, number: m.number })),
+  ];
+  merged.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  return merged.slice(0, limit).reverse();
+}
+
 export function insertOutbound(row: {
   account_uuid?: string;
   job_uuid?: string;
