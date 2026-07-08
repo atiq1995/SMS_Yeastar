@@ -10,6 +10,7 @@ import {
   getSingleOAuthTokens,
 } from "../db/repository.js";
 import { sendSms } from "../yeastar/send.js";
+import { env } from "../config/env.js";
 import { processJobEvent } from "../workers/process-event.js";
 import { getJob, getCompany, jobCompanyUuid, getVendorName } from "./api.js";
 import { resolveAccessToken } from "./oauth.js";
@@ -110,8 +111,9 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
     }
     if (event === "sms_test_yeastar") {
       try {
-        const result = await sendSms("0000000000", "SMS dashboard connection test");
-        sendInvokeJson(res, { ok: result.accepted, dryRun: result.dryRun, detail: result.rawResponse });
+        const dest = env.smsTestMobile || "0000000000";
+        const result = await sendSms(dest, "SMS dashboard connection test");
+        sendInvokeJson(res, { ok: result.accepted, dryRun: result.dryRun, detail: result.rawResponse, to: dest });
       } catch (err) {
         sendInvokeJson(res, { ok: false, error: String(err) });
       }
@@ -153,7 +155,7 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
         vendorName
       );
       sendInvokeJson(res, { ok: true, queued: true });
-      void enqueueSend(toNumber, text)
+      void enqueueSend(toNumber, text, { jobUuid: jobId })
         .then((result) => {
           insertOutbound({
             account_uuid: acct,

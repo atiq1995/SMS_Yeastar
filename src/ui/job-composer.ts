@@ -3,6 +3,7 @@ import { listJobThread } from "../db/repository.js";
 import { getJob, getCompany, jobCompanyUuid, listJobRecipients, listSmsTemplates, getVendorName } from "../servicem8/api.js";
 import { resolveAccessToken } from "../servicem8/oauth.js";
 import { buildJobTemplateContext } from "../engine/job-context.js";
+import { isTestMode, testModeLabel } from "../yeastar/guard.js";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -26,6 +27,8 @@ export type JobComposerModel = {
   thread: { dir: "out" | "in"; body: string; at: string; number: string }[];
   defaultTemplateId: string | null;
   vendorName: string;
+  testMode: boolean;
+  testModeLabel: string;
   error?: string;
   hint?: string;
 };
@@ -47,6 +50,8 @@ export async function loadJobComposerModel(
     thread: [],
     defaultTemplateId: null,
     vendorName: "",
+    testMode: isTestMode(),
+    testModeLabel: testModeLabel(),
     error,
     hint,
   });
@@ -84,6 +89,8 @@ export async function loadJobComposerModel(
       templates,
       thread,
       vendorName: vendorName ?? "",
+      testMode: isTestMode(),
+      testModeLabel: testModeLabel(),
       defaultTemplateId: enRoute?.id ?? templates[0]?.id ?? null,
     };
   } catch (e) {
@@ -173,6 +180,7 @@ export function renderJobComposerHtml(model: JobComposerModel): string {
   </div>
 
   <div id="toast" class="toast" style="margin:12px 16px 0"></div>
+  ${model.testMode ? `<div class="test-banner">UAT mode: ${esc(model.testModeLabel)}</div>` : ""}
 
   ${
     noRecipients

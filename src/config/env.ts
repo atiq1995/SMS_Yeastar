@@ -36,6 +36,11 @@ export const env = {
   yeastarSimPort: optInt("YEASTAR_SIM_PORT", 1),
   yeastarSendEnabled: opt("YEASTAR_SEND_ENABLED", "false") === "true",
   yeastarReceiveEnabled: opt("YEASTAR_RECEIVE_ENABLED", "true") === "true",
+
+  /** UAT: redirect all SMS to this number (optional) */
+  smsTestMobile: opt("SMS_TEST_MOBILE", ""),
+  /** UAT: only allow sends for this job UUID (optional) */
+  smsTestJobUuid: opt("SMS_TEST_JOB_UUID", ""),
 };
 
 export function requireServiceM8OAuth(): void {

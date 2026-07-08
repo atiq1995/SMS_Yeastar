@@ -290,4 +290,13 @@ export const COMPOSER_STYLES = `
     font-size: 13px;
   }
   .composer-error strong { display: block; color: #991b1b; margin-bottom: 8px; }
+  .test-banner {
+    margin: 0 16px 12px;
+    padding: 8px 12px;
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    color: #92400e;
+    border-radius: 6px;
+    font-size: 12px;
+  }
 `;

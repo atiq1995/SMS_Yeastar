@@ -8,6 +8,7 @@ import {
   listTemplates,
 } from "../db/repository.js";
 import { env } from "../config/env.js";
+import { isTestMode, testModeLabel } from "../yeastar/guard.js";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -56,6 +57,7 @@ export function renderDashboardHtml(accountUuid: string): string {
 <div id="overview" class="panel active">
   <div class="stat">${sent7d}</div><div class="muted">Outbound (7 days)</div>
   <p>Yeastar send: <strong>${env.yeastarSendEnabled ? "enabled" : "dry-run"}</strong></p>
+  ${isTestMode() ? `<p style="background:#fef3c7;border:1px solid #fcd34d;padding:8px 12px;border-radius:6px;font-size:13px;color:#92400e">UAT mode: ${esc(testModeLabel())}</p>` : ""}
 </div>
 
 <div id="rules" class="panel">

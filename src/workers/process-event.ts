@@ -55,7 +55,7 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
   if (!mobile) return { sent: false, reason: "no_mobile" };
 
   const body = renderTemplate(tpl.body, { ...ctx, status });
-  const result = await enqueueSend(mobile, body);
+  const result = await enqueueSend(mobile, body, { jobUuid });
   insertOutbound({
     account_uuid: input.account_uuid,
     job_uuid: jobUuid,
