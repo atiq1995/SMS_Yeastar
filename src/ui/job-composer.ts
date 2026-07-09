@@ -251,6 +251,13 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 }
 
+function tidySmsWhitespace(text) {
+  return text
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\s+([,.!?;:])/g, '$1')
+    .trim();
+}
+
 function renderPreview(text) {
   const customer = CTX.customerName || '';
   const parts = customer.trim().split(/\\s+/);
@@ -265,9 +272,9 @@ function renderPreview(text) {
     'company.name': customer,
     'vendor.name': CTX.vendorName || '',
   };
-  let out = text.replace(/\\{([a-z0-9_.]+)\\}/gi, (_, k) => sm8[k.toLowerCase()] ?? '{' + k + '}');
+  let out = text.replace(/\\{([a-z0-9_.]+)\\}/gi, (_, k) => sm8[k.toLowerCase()] ?? '');
   out = out.replace(/\\{\\{(\\w+)\\}\\}/g, (_, k) => CTX[k] ?? '');
-  return out;
+  return tidySmsWhitespace(out);
 }
 
 function showToast(text, err) {

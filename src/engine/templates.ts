@@ -15,6 +15,14 @@ export function renderTemplate(body: string, ctx: TemplateContext): string {
   return tpl(ctx).trim();
 }
 
+/** Collapse gaps left when a placeholder resolves to empty */
+function tidySmsWhitespace(text: string): string {
+  return text
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([,.!?;:])/g, "$1")
+    .trim();
+}
+
 /** ServiceM8 `{job.xxx}` tokens + our `{{var}}` Handlebars syntax */
 export function renderSmsBody(body: string, ctx: TemplateContext, vendorName?: string): string {
   const customer = ctx.customerName || "";
@@ -30,6 +38,8 @@ export function renderSmsBody(body: string, ctx: TemplateContext, vendorName?: s
     "company.name": ctx.companyName || customer,
     "vendor.name": vendorName || ctx.companyName || "",
   };
-  const withSm8 = body.replace(/\{([a-z0-9_.]+)\}/gi, (_, key: string) => sm8[key.toLowerCase()] ?? `{${key}}`);
-  return /\{\{/.test(withSm8) ? renderTemplate(withSm8, ctx) : withSm8.trim();
+  // ponytail: unknown `{job.xxx}` → "" so customers never see raw tags; known empty fields → ""
+  const withSm8 = body.replace(/\{([a-z0-9_.]+)\}/gi, (_, key: string) => sm8[key.toLowerCase()] ?? "");
+  const rendered = /\{\{/.test(withSm8) ? renderTemplate(withSm8, ctx) : withSm8;
+  return tidySmsWhitespace(rendered);
 }

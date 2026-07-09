@@ -7,7 +7,7 @@ import {
   logEvent,
 } from "../db/repository.js";
 import { buildJobTemplateContext } from "../engine/job-context.js";
-import { renderTemplate } from "../engine/templates.js";
+import { renderSmsBody } from "../engine/templates.js";
 import { evaluateRules, inferTrigger } from "../engine/rules.js";
 import { enqueueSend } from "../yeastar/queue.js";
 import { createJobNote } from "../servicem8/api.js";
@@ -56,7 +56,7 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
   if (!tpl) return { sent: false, reason: "no_template" };
   if (!mobile) return { sent: false, reason: "no_mobile" };
 
-  const body = renderTemplate(tpl.body, { ...ctx, status });
+  const body = renderSmsBody(tpl.body, { ...ctx, status });
   const guarded = guardOutbound(mobile, body, jobUuid);
   if (!guarded.ok) {
     insertOutbound({

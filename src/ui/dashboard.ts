@@ -203,6 +203,7 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
     <label for="importedTplName">Template name</label>
     <input type="text" id="importedTplName" placeholder="e.g. Quote follow up" />
     <label for="importedTplBody">Message</label>
+    <p class="hint">Empty job fields are left blank in the SMS (tags are not sent). Use the preview to check wording.</p>
     <div class="chips" id="importedTplChips"></div>
     <textarea id="importedTplBody" rows="5" placeholder="Hi {job.contact_first}, ..."></textarea>
     <label>Live preview</label>
@@ -266,20 +267,30 @@ function snippet(body) {
   return text.length > 72 ? text.slice(0, 72) + '…' : text;
 }
 
+function tidySmsWhitespace(text) {
+  return text
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\s+([,.!?;:])/g, '$1')
+    .trim();
+}
+
 function renderImportedPreview(body) {
-  const parts = String(SAMPLE.customerName || '').trim().split(/\s+/);
-  const first = parts[0] || SAMPLE.customerName;
+  const parts = String(SAMPLE.customerName || '').trim().split(/\\s+/);
+  const first = parts[0] || '';
   const last = parts.slice(1).join(' ');
-  return String(body)
-    .replace(/\{job\.contact_first\}/gi, first)
-    .replace(/\{job\.contact_last\}/gi, last)
-    .replace(/\{job\.contact_name\}/gi, SAMPLE.customerName)
-    .replace(/\{job\.generated_job_id\}/gi, SAMPLE.jobNumber)
-    .replace(/\{job\.status\}/gi, SAMPLE.status)
-    .replace(/\{job\.job_address\}/gi, SAMPLE.address)
-    .replace(/\{job\.address\}/gi, SAMPLE.address)
-    .replace(/\{vendor\.name\}/gi, SAMPLE.companyName)
-    .replace(/\{company\.name\}/gi, SAMPLE.customerName);
+  const sm8 = {
+    'job.contact_first': first,
+    'job.contact_last': last,
+    'job.contact_name': SAMPLE.customerName,
+    'job.generated_job_id': SAMPLE.jobNumber,
+    'job.status': SAMPLE.status,
+    'job.job_address': SAMPLE.address,
+    'job.address': SAMPLE.address,
+    'vendor.name': SAMPLE.companyName,
+    'company.name': SAMPLE.customerName,
+  };
+  const out = String(body).replace(/\\{([a-z0-9_.]+)\\}/gi, (_, k) => sm8[k.toLowerCase()] ?? '');
+  return tidySmsWhitespace(out);
 }
 
 function showToast(id, msg, err) {
