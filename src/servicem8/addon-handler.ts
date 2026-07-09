@@ -8,11 +8,15 @@ import {
   replaceRules,
   insertOutbound,
   getSingleOAuthTokens,
+  listTemplates,
+  listOutbound,
+  listInbound,
+  countOutboundSince,
 } from "../db/repository.js";
 import { sendSms } from "../yeastar/send.js";
 import { env } from "../config/env.js";
 import { processJobEvent } from "../workers/process-event.js";
-import { getJob, getCompany, jobCompanyUuid, createJobNote, createSmsTemplate } from "./api.js";
+import { getJob, getCompany, jobCompanyUuid, createJobNote, createSmsTemplate, listSmsTemplates } from "./api.js";
 import { resolveAccessToken } from "./oauth.js";
 import { renderSmsBody } from "../engine/templates.js";
 import { buildJobTemplateContext } from "../engine/job-context.js";
@@ -83,15 +87,35 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
       sendEventHtml(res, await renderJobActionHtml(acct, job || "", payload.auth));
       return;
     }
+    if (event === "sms_dashboard_data") {
+      const token = await resolveAccessToken(acct, payload.auth);
+      const since = new Date(Date.now() - 7 * 864e5).toISOString();
+      sendInvokeJson(res, {
+        ok: true,
+        templates: listTemplates().map((t) => ({ id: t.id, name: t.name, body: t.body })),
+        importedTemplates: token ? await listSmsTemplates(token) : [],
+        outbound: listOutbound(50),
+        inbound: listInbound(50),
+        sent7d: countOutboundSince(since),
+      });
+      return;
+    }
     if (event === "sms_dashboard_save") {
       const section = args.section as string;
       if (section === "settings" && typeof args.en_route_statuses === "string") {
         setSetting("en_route_statuses", args.en_route_statuses);
+        sendInvokeJson(res, { ok: true });
+        return;
       }
       if (section === "templates" && Array.isArray(args.templates)) {
         for (const t of args.templates as { id?: number; name: string; body: string }[]) {
           upsertTemplate(t.name, t.body, t.id);
         }
+        sendInvokeJson(res, {
+          ok: true,
+          templates: listTemplates().map((t) => ({ id: t.id, name: t.name, body: t.body })),
+        });
+        return;
       }
       if (section === "imported_templates" && Array.isArray(args.templates)) {
         const token = await resolveAccessToken(acct, payload.auth);
@@ -106,6 +130,8 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
             return;
           }
         }
+        sendInvokeJson(res, { ok: true, importedTemplates: await listSmsTemplates(token) });
+        return;
       }
       if (section === "rules" && Array.isArray(args.rules)) {
         replaceRules(
@@ -120,8 +146,10 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
             })
           )
         );
+        sendInvokeJson(res, { ok: true });
+        return;
       }
-      sendInvokeJson(res, { ok: true });
+      sendInvokeJson(res, { ok: false, error: "unknown_section" });
       return;
     }
     if (event === "sms_test_yeastar") {

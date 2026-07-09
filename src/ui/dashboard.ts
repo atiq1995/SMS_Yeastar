@@ -60,7 +60,13 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
 </div>
 
 <div id="overview" class="panel active">
-  <div class="stat">${sent7d}</div><div class="muted">Outbound (7 days)</div>
+  <div class="panel-head">
+    <div>
+      <div class="stat" id="statSent7d">${sent7d}</div>
+      <div class="muted">Outbound (7 days)</div>
+    </div>
+    <button type="button" id="refreshDashboard" class="secondary sm">Refresh</button>
+  </div>
   <p>Yeastar send: <strong>${env.yeastarSendEnabled ? "enabled" : "dry-run"}</strong></p>
   ${isTestMode() ? `<p style="background:#fef3c7;border:1px solid #fcd34d;padding:8px 12px;border-radius:6px;font-size:13px;color:#92400e">UAT mode: ${esc(testModeLabel())}</p>` : ""}
 </div>
@@ -132,23 +138,31 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
 </div>
 
 <div id="log" class="panel">
+  <div class="panel-head">
+    <div><h2>Outbound log</h2></div>
+    <button type="button" id="refreshLog" class="secondary sm">Refresh</button>
+  </div>
   <div class="card table-wrap" style="padding:0">
     <table><thead><tr><th>When</th><th>To</th><th>Status</th><th>Body</th></tr></thead>
-    <tbody>${outbound.map((m) => `<tr><td>${esc(String(m.created_at))}</td><td>${esc(String(m.to_number))}</td><td>${esc(String(m.status))}</td><td>${esc(String(m.body).slice(0, 80))}</td></tr>`).join("") || '<tr><td colspan="4" class="empty">No outbound messages yet</td></tr>'}</tbody></table>
+    <tbody id="logList">${outbound.map((m) => `<tr><td>${esc(String(m.created_at))}</td><td>${esc(String(m.to_number))}</td><td>${esc(String(m.status))}</td><td>${esc(String(m.body).slice(0, 80))}</td></tr>`).join("") || '<tr><td colspan="4" class="empty">No outbound messages yet</td></tr>'}</tbody></table>
   </div>
 </div>
 
 <div id="inbox" class="panel">
+  <div class="panel-head">
+    <div><h2>Inbox</h2></div>
+    <button type="button" id="refreshInbox" class="secondary sm">Refresh</button>
+  </div>
   <div class="card table-wrap" style="padding:0">
     <table><thead><tr><th>When</th><th>From</th><th>Message</th></tr></thead>
-    <tbody>${inbound.map((m) => `<tr><td>${esc(String(m.received_at))}</td><td>${esc(String(m.from_number))}</td><td>${esc(String(m.body))}</td></tr>`).join("") || '<tr><td colspan="3" class="empty">No inbound messages yet</td></tr>'}</tbody></table>
+    <tbody id="inboxList">${inbound.map((m) => `<tr><td>${esc(String(m.received_at))}</td><td>${esc(String(m.from_number))}</td><td>${esc(String(m.body))}</td></tr>`).join("") || '<tr><td colspan="3" class="empty">No inbound messages yet</td></tr>'}</tbody></table>
   </div>
 </div>
 
 <div id="analytics" class="panel">
   <div class="card">
-    <p>Sent last 7 days: <strong>${sent7d}</strong></p>
-    <p>Inbound stored: <strong>${inbound.length}</strong> (latest page)</p>
+    <p>Sent last 7 days: <strong id="analyticsSent7d">${sent7d}</strong></p>
+    <p>Inbound stored: <strong id="analyticsInbound">${inbound.length}</strong> (latest page)</p>
   </div>
 </div>
 
@@ -222,7 +236,7 @@ const SAMPLE = {
 };
 
 let templates = ${tplJson};
-const importedTemplates = ${importedTplJson};
+let importedTemplates = ${importedTplJson};
 let rules = ${rulesJson};
 const persistedTplIds = new Set(${JSON.stringify(templates.map((t) => t.id))});
 let nextTplId = ${maxTplId + 1};
@@ -262,6 +276,72 @@ function showToast(id, msg, err) {
   setTimeout(() => el.classList.remove('show'), 3000);
 }
 
+function parseInvoke(res) {
+  if (res == null) return {};
+  if (typeof res === 'string') {
+    try { return JSON.parse(res); } catch { return { error: res }; }
+  }
+  return res;
+}
+
+function applyDashboardData(data) {
+  if (Array.isArray(data.templates)) {
+    templates = data.templates;
+    persistedTplIds.clear();
+    templates.forEach((t) => persistedTplIds.add(t.id));
+    nextTplId = templates.reduce((m, t) => Math.max(m, t.id), 0) + 1;
+    renderTemplates();
+    renderRules();
+  }
+  if (Array.isArray(data.importedTemplates)) {
+    importedTemplates = data.importedTemplates;
+    renderImportedTemplates();
+  }
+  if (Array.isArray(data.outbound)) renderLog(data.outbound);
+  if (Array.isArray(data.inbound)) renderInbox(data.inbound);
+  if (typeof data.sent7d === 'number') {
+    document.getElementById('statSent7d').textContent = String(data.sent7d);
+    document.getElementById('analyticsSent7d').textContent = String(data.sent7d);
+    document.getElementById('analyticsInbound').textContent = String(data.inbound?.length ?? 0);
+  }
+}
+
+async function refreshDashboardData() {
+  if (!client) return;
+  try {
+    const res = parseInvoke(await invoke('sms_dashboard_data', {}));
+    if (res.ok === false || res.error) {
+      showToast('templatesToast', res.error || 'Refresh failed', true);
+      return;
+    }
+    applyDashboardData(res);
+  } catch (e) {
+    showToast('templatesToast', String(e), true);
+  }
+}
+
+function renderLog(rows) {
+  const el = document.getElementById('logList');
+  if (!rows.length) {
+    el.innerHTML = '<tr><td colspan="4" class="empty">No outbound messages yet</td></tr>';
+    return;
+  }
+  el.innerHTML = rows.map((m) =>
+    '<tr><td>' + escHtml(m.created_at) + '</td><td>' + escHtml(m.to_number) + '</td><td>' + escHtml(m.status) + '</td><td>' + escHtml(String(m.body).slice(0, 80)) + '</td></tr>'
+  ).join('');
+}
+
+function renderInbox(rows) {
+  const el = document.getElementById('inboxList');
+  if (!rows.length) {
+    el.innerHTML = '<tr><td colspan="3" class="empty">No inbound messages yet</td></tr>';
+    return;
+  }
+  el.innerHTML = rows.map((m) =>
+    '<tr><td>' + escHtml(m.received_at) + '</td><td>' + escHtml(m.from_number) + '</td><td>' + escHtml(m.body) + '</td></tr>'
+  ).join('');
+}
+
 document.getElementById('tabs').addEventListener('click', (e) => {
   const btn = e.target.closest('.tab');
   if (!btn) return;
@@ -269,6 +349,10 @@ document.getElementById('tabs').addEventListener('click', (e) => {
   document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById(btn.dataset.tab).classList.add('active');
+  const tab = btn.dataset.tab;
+  if (tab === 'log' || tab === 'inbox' || tab === 'overview' || tab === 'templates' || tab === 'analytics') {
+    void refreshDashboardData();
+  }
 });
 
 function invoke(event, args) {
@@ -472,10 +556,19 @@ function setupImportedTemplateModal() {
       return;
     }
     try {
-      const res = await invoke('sms_dashboard_save', { section: 'imported_templates', templates: [{ name, body }] });
+      const res = parseInvoke(await invoke('sms_dashboard_save', { section: 'imported_templates', templates: [{ name, body }] }));
       if (res && res.ok !== false) {
+        if (Array.isArray(res.importedTemplates)) {
+          importedTemplates = res.importedTemplates;
+          renderImportedTemplates();
+        } else {
+          await refreshDashboardData();
+        }
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        document.getElementById('importedTemplatesCard').style.display = 'block';
+        document.getElementById('toggleImportedTemplates').textContent = 'Hide imported templates';
         showToast('templatesToast', 'ServiceM8 template added');
-        setTimeout(() => location.reload(), 800);
       } else {
         showToast('templatesToast', JSON.stringify(res), true);
       }
@@ -534,10 +627,17 @@ document.getElementById('saveTemplates').addEventListener('click', async () => {
       name: t.name,
       body: t.body,
     }));
-    const res = await invoke('sms_dashboard_save', { section: 'templates', templates: payload });
+    const res = parseInvoke(await invoke('sms_dashboard_save', { section: 'templates', templates: payload }));
     if (res && res.ok !== false) {
+      if (Array.isArray(res.templates)) {
+        templates = res.templates;
+        persistedTplIds.clear();
+        templates.forEach((t) => persistedTplIds.add(t.id));
+        nextTplId = templates.reduce((m, t) => Math.max(m, t.id), 0) + 1;
+        renderTemplates();
+        renderRules();
+      }
       showToast('templatesToast', 'Templates saved');
-      setTimeout(() => location.reload(), 800);
     } else {
       showToast('templatesToast', JSON.stringify(res), true);
     }
@@ -556,7 +656,7 @@ document.getElementById('saveRules').addEventListener('click', async () => {
       enabled: r.enabled ? 1 : 0,
       sort_order: i,
     }));
-    const res = await invoke('sms_dashboard_save', { section: 'rules', rules: payload });
+    const res = parseInvoke(await invoke('sms_dashboard_save', { section: 'rules', rules: payload }));
     if (res && res.ok !== false) {
       showToast('rulesToast', 'Rules saved');
     } else {
@@ -569,7 +669,7 @@ document.getElementById('saveRules').addEventListener('click', async () => {
 
 document.getElementById('saveSettings')?.addEventListener('click', async () => {
   try {
-    const res = await invoke('sms_dashboard_save', {
+    const res = parseInvoke(await invoke('sms_dashboard_save', {
       section: 'settings',
       en_route_statuses: document.getElementById('enRouteStatuses').value,
     });
@@ -581,7 +681,7 @@ document.getElementById('saveSettings')?.addEventListener('click', async () => {
 
 document.getElementById('testYeastar')?.addEventListener('click', async () => {
   try {
-    const res = await invoke('sms_test_yeastar', {});
+    const res = parseInvoke(await invoke('sms_test_yeastar', {}));
     document.getElementById('settingsOut').textContent = JSON.stringify(res);
   } catch (e) {
     document.getElementById('settingsOut').textContent = String(e);
@@ -593,6 +693,10 @@ setupImportedTemplateModal();
 renderTemplates();
 renderImportedTemplates();
 renderRules();
+document.getElementById('refreshDashboard')?.addEventListener('click', () => void refreshDashboardData());
+document.getElementById('refreshLog')?.addEventListener('click', () => void refreshDashboardData());
+document.getElementById('refreshInbox')?.addEventListener('click', () => void refreshDashboardData());
+void refreshDashboardData();
 </script>
 </body></html>`;
 }
