@@ -203,6 +203,7 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
     <label for="importedTplName">Template name</label>
     <input type="text" id="importedTplName" placeholder="e.g. Quote follow up" />
     <label for="importedTplBody">Message</label>
+    <div class="chips" id="importedTplChips"></div>
     <textarea id="importedTplBody" rows="5" placeholder="Hi {job.contact_first}, ..."></textarea>
     <label>Live preview</label>
     <div class="preview-box" id="importedTplPreview"><strong>Sample SMS</strong><span></span></div>
@@ -220,6 +221,15 @@ try { client = SMClient.init(); } catch (e) { console.warn('SMClient', e); }
 const accountUuid = ${JSON.stringify(accountUuid)};
 
 const VARS = ['customerName', 'jobNumber', 'status', 'address', 'companyName', 'mobile'];
+const SM8_VARS = [
+  { label: 'First name', tag: '{job.contact_first}' },
+  { label: 'Customer', tag: '{job.contact_name}' },
+  { label: 'Last name', tag: '{job.contact_last}' },
+  { label: 'Job #', tag: '{job.generated_job_id}' },
+  { label: 'Status', tag: '{job.status}' },
+  { label: 'Address', tag: '{job.job_address}' },
+  { label: 'Business', tag: '{vendor.name}' },
+];
 const TRIGGERS = [
   { value: 'job_created', label: 'Job created' },
   { value: 'status_changed', label: 'Status changed' },
@@ -257,9 +267,12 @@ function snippet(body) {
 }
 
 function renderImportedPreview(body) {
-  const first = String(SAMPLE.customerName || '').trim().split(/\s+/)[0] || SAMPLE.customerName;
+  const parts = String(SAMPLE.customerName || '').trim().split(/\s+/);
+  const first = parts[0] || SAMPLE.customerName;
+  const last = parts.slice(1).join(' ');
   return String(body)
     .replace(/\{job\.contact_first\}/gi, first)
+    .replace(/\{job\.contact_last\}/gi, last)
     .replace(/\{job\.contact_name\}/gi, SAMPLE.customerName)
     .replace(/\{job\.generated_job_id\}/gi, SAMPLE.jobNumber)
     .replace(/\{job\.status\}/gi, SAMPLE.status)
@@ -538,8 +551,25 @@ function setupImportedTemplateModal() {
   const addBtn = document.getElementById('addImportedTemplate');
   const cancelBtn = document.getElementById('importedTplCancel');
   const bodyEl = document.getElementById('importedTplBody');
+  const chipsEl = document.getElementById('importedTplChips');
   const saveBtn = document.getElementById('importedTplSave');
   if (!modal || !addBtn || !cancelBtn || !bodyEl || !saveBtn) return;
+  if (chipsEl) {
+    chipsEl.innerHTML = SM8_VARS.map((v) =>
+      '<span class="chip" data-tag="' + escHtml(v.tag) + '">' + escHtml(v.label) + '</span>'
+    ).join('');
+    chipsEl.querySelectorAll('.chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const tag = chip.dataset.tag || '';
+        const start = bodyEl.selectionStart != null ? bodyEl.selectionStart : bodyEl.value.length;
+        const end = bodyEl.selectionEnd != null ? bodyEl.selectionEnd : start;
+        bodyEl.value = bodyEl.value.slice(0, start) + tag + bodyEl.value.slice(end);
+        bodyEl.focus();
+        bodyEl.setSelectionRange(start + tag.length, start + tag.length);
+        updateImportedModalPreview();
+      });
+    });
+  }
   addBtn.addEventListener('click', () => {
     document.getElementById('importedTplName').value = '';
     document.getElementById('importedTplBody').value = 'Hi {job.contact_first}, ';
