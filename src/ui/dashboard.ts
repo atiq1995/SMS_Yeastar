@@ -279,7 +279,7 @@ function showToast(id, msg, err) {
 function parseInvoke(res) {
   if (res == null) return {};
   if (typeof res === 'string') {
-    try { return JSON.parse(res); } catch { return { error: res }; }
+    try { return JSON.parse(res); } catch (e) { return { error: res }; }
   }
   return res;
 }
@@ -302,7 +302,8 @@ function applyDashboardData(data) {
   if (typeof data.sent7d === 'number') {
     document.getElementById('statSent7d').textContent = String(data.sent7d);
     document.getElementById('analyticsSent7d').textContent = String(data.sent7d);
-    document.getElementById('analyticsInbound').textContent = String(data.inbound?.length ?? 0);
+    const inboundCount = Array.isArray(data.inbound) ? data.inbound.length : 0;
+    document.getElementById('analyticsInbound').textContent = String(inboundCount);
   }
 }
 
@@ -310,8 +311,8 @@ async function refreshDashboardData() {
   if (!client) return;
   try {
     const res = parseInvoke(await invoke('sms_dashboard_data', {}));
-    if (res.ok === false || res.error) {
-      showToast('templatesToast', res.error || 'Refresh failed', true);
+    if (res.ok !== true) {
+      if (res.error) showToast('templatesToast', String(res.error), true);
       return;
     }
     applyDashboardData(res);
@@ -342,18 +343,19 @@ function renderInbox(rows) {
   ).join('');
 }
 
-document.getElementById('tabs').addEventListener('click', (e) => {
-  const btn = e.target.closest('.tab');
-  if (!btn) return;
-  document.querySelectorAll('.tab').forEach((b) => b.classList.remove('active'));
-  document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById(btn.dataset.tab).classList.add('active');
-  const tab = btn.dataset.tab;
-  if (tab === 'log' || tab === 'inbox' || tab === 'overview' || tab === 'templates' || tab === 'analytics') {
-    void refreshDashboardData();
-  }
-});
+function bindTabs() {
+  const tabs = document.getElementById('tabs');
+  if (!tabs) return;
+  tabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('.tab');
+    if (!btn) return;
+    document.querySelectorAll('.tab').forEach((b) => b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
+    btn.classList.add('active');
+    const panel = document.getElementById(btn.dataset.tab);
+    if (panel) panel.classList.add('active');
+  });
+}
 
 function invoke(event, args) {
   if (!client) throw new Error('ServiceM8 SDK not available');
@@ -487,25 +489,29 @@ function updateModalPreview() {
 
 function setupTemplateModal() {
   const chipsEl = document.getElementById('modalTplChips');
+  const bodyEl = document.getElementById('modalTplBody');
+  const cancelEl = document.getElementById('modalTplCancel');
+  const saveEl = document.getElementById('modalTplSave');
+  const modalEl = document.getElementById('templateModal');
+  if (!chipsEl || !bodyEl || !cancelEl || !saveEl || !modalEl) return;
   chipsEl.innerHTML = VARS.map((v) => '<span class="chip" data-var="' + v + '">{{' + v + '}}</span>').join('');
   chipsEl.querySelectorAll('.chip').forEach((chip) => {
     chip.addEventListener('click', () => {
-      const ta = document.getElementById('modalTplBody');
       const v = '{{' + chip.dataset.var + '}}';
-      const start = ta.selectionStart ?? ta.value.length;
-      const end = ta.selectionEnd ?? start;
-      ta.value = ta.value.slice(0, start) + v + ta.value.slice(end);
-      ta.focus();
-      ta.setSelectionRange(start + v.length, start + v.length);
+      const start = bodyEl.selectionStart ?? bodyEl.value.length;
+      const end = bodyEl.selectionEnd ?? start;
+      bodyEl.value = bodyEl.value.slice(0, start) + v + bodyEl.value.slice(end);
+      bodyEl.focus();
+      bodyEl.setSelectionRange(start + v.length, start + v.length);
       updateModalPreview();
     });
   });
-  document.getElementById('modalTplBody').addEventListener('input', updateModalPreview);
-  document.getElementById('modalTplCancel').addEventListener('click', closeTemplateModal);
-  document.getElementById('templateModal').addEventListener('click', (e) => {
+  bodyEl.addEventListener('input', updateModalPreview);
+  cancelEl.addEventListener('click', closeTemplateModal);
+  modalEl.addEventListener('click', (e) => {
     if (e.target.id === 'templateModal') closeTemplateModal();
   });
-  document.getElementById('modalTplSave').addEventListener('click', () => {
+  saveEl.addEventListener('click', () => {
     const name = document.getElementById('modalTplName').value.trim();
     const body = document.getElementById('modalTplBody').value.trim();
     if (!name) { alert('Please enter a template name.'); return; }
@@ -529,7 +535,12 @@ function updateImportedModalPreview() {
 
 function setupImportedTemplateModal() {
   const modal = document.getElementById('importedTemplateModal');
-  document.getElementById('addImportedTemplate').addEventListener('click', () => {
+  const addBtn = document.getElementById('addImportedTemplate');
+  const cancelBtn = document.getElementById('importedTplCancel');
+  const bodyEl = document.getElementById('importedTplBody');
+  const saveBtn = document.getElementById('importedTplSave');
+  if (!modal || !addBtn || !cancelBtn || !bodyEl || !saveBtn) return;
+  addBtn.addEventListener('click', () => {
     document.getElementById('importedTplName').value = '';
     document.getElementById('importedTplBody').value = 'Hi {job.contact_first}, ';
     updateImportedModalPreview();
@@ -537,7 +548,7 @@ function setupImportedTemplateModal() {
     modal.setAttribute('aria-hidden', 'false');
     document.getElementById('importedTplName').focus();
   });
-  document.getElementById('importedTplCancel').addEventListener('click', () => {
+  cancelBtn.addEventListener('click', () => {
     modal.classList.remove('open');
     modal.setAttribute('aria-hidden', 'true');
   });
@@ -547,8 +558,8 @@ function setupImportedTemplateModal() {
       modal.setAttribute('aria-hidden', 'true');
     }
   });
-  document.getElementById('importedTplBody').addEventListener('input', updateImportedModalPreview);
-  document.getElementById('importedTplSave').addEventListener('click', async () => {
+  bodyEl.addEventListener('input', updateImportedModalPreview);
+  saveBtn.addEventListener('click', async () => {
     const name = document.getElementById('importedTplName').value.trim();
     const body = document.getElementById('importedTplBody').value.trim();
     if (!name || !body) {
@@ -591,112 +602,125 @@ function deleteTemplate(id) {
   renderRules();
 }
 
-document.getElementById('toggleImportedTemplates').addEventListener('click', () => {
-  const card = document.getElementById('importedTemplatesCard');
-  const btn = document.getElementById('toggleImportedTemplates');
-  const open = card.style.display !== 'none';
-  card.style.display = open ? 'none' : 'block';
-  btn.textContent = open ? 'Show imported templates' : 'Hide imported templates';
-});
-document.getElementById('toggleLocalTemplates').addEventListener('click', () => {
-  const card = document.getElementById('localTemplatesCard');
-  const btn = document.getElementById('toggleLocalTemplates');
-  const saveBtn = document.getElementById('saveTemplates');
-  const open = card.style.display !== 'none';
-  card.style.display = open ? 'none' : 'block';
-  saveBtn.style.display = open ? 'none' : 'inline-block';
-  btn.textContent = open ? 'Show internal templates' : 'Hide internal templates';
-});
-document.getElementById('localTemplatesCard').style.display = 'none';
-document.getElementById('addRule').addEventListener('click', () => {
-  rules.push({
-    id: nextRuleId++,
-    name: 'New rule',
-    trigger_type: 'job_created',
-    status_match: '',
-    template_id: templates[0]?.id ?? 1,
-    enabled: true,
-  });
-  renderRules();
-});
-
-document.getElementById('saveTemplates').addEventListener('click', async () => {
+function initDashboard() {
+  bindTabs();
   try {
-    const payload = templates.map((t) => ({
-      id: persistedTplIds.has(t.id) ? t.id : undefined,
-      name: t.name,
-      body: t.body,
-    }));
-    const res = parseInvoke(await invoke('sms_dashboard_save', { section: 'templates', templates: payload }));
-    if (res && res.ok !== false) {
-      if (Array.isArray(res.templates)) {
-        templates = res.templates;
-        persistedTplIds.clear();
-        templates.forEach((t) => persistedTplIds.add(t.id));
-        nextTplId = templates.reduce((m, t) => Math.max(m, t.id), 0) + 1;
-        renderTemplates();
-        renderRules();
-      }
-      showToast('templatesToast', 'Templates saved');
-    } else {
-      showToast('templatesToast', JSON.stringify(res), true);
-    }
-  } catch (e) {
-    showToast('templatesToast', String(e), true);
-  }
-});
+    setupTemplateModal();
+    setupImportedTemplateModal();
+    renderTemplates();
+    renderImportedTemplates();
+    renderRules();
 
-document.getElementById('saveRules').addEventListener('click', async () => {
-  try {
-    const payload = rules.map((r, i) => ({
-      name: r.name,
-      trigger_type: r.trigger_type,
-      status_match: r.status_match || null,
-      template_id: r.template_id,
-      enabled: r.enabled ? 1 : 0,
-      sort_order: i,
-    }));
-    const res = parseInvoke(await invoke('sms_dashboard_save', { section: 'rules', rules: payload }));
-    if (res && res.ok !== false) {
-      showToast('rulesToast', 'Rules saved');
-    } else {
-      showToast('rulesToast', JSON.stringify(res), true);
-    }
-  } catch (e) {
-    showToast('rulesToast', String(e), true);
-  }
-});
-
-document.getElementById('saveSettings')?.addEventListener('click', async () => {
-  try {
-    const res = parseInvoke(await invoke('sms_dashboard_save', {
-      section: 'settings',
-      en_route_statuses: document.getElementById('enRouteStatuses').value,
+    document.getElementById('toggleImportedTemplates')?.addEventListener('click', () => {
+      const card = document.getElementById('importedTemplatesCard');
+      const btn = document.getElementById('toggleImportedTemplates');
+      if (!card || !btn) return;
+      const open = card.style.display !== 'none';
+      card.style.display = open ? 'none' : 'block';
+      btn.textContent = open ? 'Show imported templates' : 'Hide imported templates';
     });
-    document.getElementById('settingsOut').textContent = JSON.stringify(res);
-  } catch (e) {
-    document.getElementById('settingsOut').textContent = String(e);
-  }
-});
+    document.getElementById('toggleLocalTemplates')?.addEventListener('click', () => {
+      const card = document.getElementById('localTemplatesCard');
+      const btn = document.getElementById('toggleLocalTemplates');
+      const saveBtn = document.getElementById('saveTemplates');
+      if (!card || !btn || !saveBtn) return;
+      const open = card.style.display !== 'none';
+      card.style.display = open ? 'none' : 'block';
+      saveBtn.style.display = open ? 'none' : 'inline-block';
+      btn.textContent = open ? 'Show internal templates' : 'Hide internal templates';
+    });
+    const localCard = document.getElementById('localTemplatesCard');
+    if (localCard) localCard.style.display = 'none';
 
-document.getElementById('testYeastar')?.addEventListener('click', async () => {
-  try {
-    const res = parseInvoke(await invoke('sms_test_yeastar', {}));
-    document.getElementById('settingsOut').textContent = JSON.stringify(res);
-  } catch (e) {
-    document.getElementById('settingsOut').textContent = String(e);
-  }
-});
+    document.getElementById('addRule')?.addEventListener('click', () => {
+      rules.push({
+        id: nextRuleId++,
+        name: 'New rule',
+        trigger_type: 'job_created',
+        status_match: '',
+        template_id: (templates[0] && templates[0].id) || 1,
+        enabled: true,
+      });
+      renderRules();
+    });
 
-setupTemplateModal();
-setupImportedTemplateModal();
-renderTemplates();
-renderImportedTemplates();
-renderRules();
-document.getElementById('refreshDashboard')?.addEventListener('click', () => void refreshDashboardData());
-document.getElementById('refreshLog')?.addEventListener('click', () => void refreshDashboardData());
-document.getElementById('refreshInbox')?.addEventListener('click', () => void refreshDashboardData());
-void refreshDashboardData();
+    document.getElementById('saveTemplates')?.addEventListener('click', async () => {
+      try {
+        const payload = templates.map((t) => ({
+          id: persistedTplIds.has(t.id) ? t.id : undefined,
+          name: t.name,
+          body: t.body,
+        }));
+        const res = parseInvoke(await invoke('sms_dashboard_save', { section: 'templates', templates: payload }));
+        if (res && res.ok !== false) {
+          if (Array.isArray(res.templates)) {
+            templates = res.templates;
+            persistedTplIds.clear();
+            templates.forEach((t) => persistedTplIds.add(t.id));
+            nextTplId = templates.reduce((m, t) => Math.max(m, t.id), 0) + 1;
+            renderTemplates();
+            renderRules();
+          }
+          showToast('templatesToast', 'Templates saved');
+        } else {
+          showToast('templatesToast', JSON.stringify(res), true);
+        }
+      } catch (e) {
+        showToast('templatesToast', String(e), true);
+      }
+    });
+
+    document.getElementById('saveRules')?.addEventListener('click', async () => {
+      try {
+        const payload = rules.map((r, i) => ({
+          name: r.name,
+          trigger_type: r.trigger_type,
+          status_match: r.status_match || null,
+          template_id: r.template_id,
+          enabled: r.enabled ? 1 : 0,
+          sort_order: i,
+        }));
+        const res = parseInvoke(await invoke('sms_dashboard_save', { section: 'rules', rules: payload }));
+        if (res && res.ok !== false) {
+          showToast('rulesToast', 'Rules saved');
+        } else {
+          showToast('rulesToast', JSON.stringify(res), true);
+        }
+      } catch (e) {
+        showToast('rulesToast', String(e), true);
+      }
+    });
+
+    document.getElementById('saveSettings')?.addEventListener('click', async () => {
+      try {
+        const res = parseInvoke(await invoke('sms_dashboard_save', {
+          section: 'settings',
+          en_route_statuses: document.getElementById('enRouteStatuses').value,
+        }));
+        document.getElementById('settingsOut').textContent = JSON.stringify(res);
+      } catch (e) {
+        document.getElementById('settingsOut').textContent = String(e);
+      }
+    });
+
+    document.getElementById('testYeastar')?.addEventListener('click', async () => {
+      try {
+        const res = parseInvoke(await invoke('sms_test_yeastar', {}));
+        document.getElementById('settingsOut').textContent = JSON.stringify(res);
+      } catch (e) {
+        document.getElementById('settingsOut').textContent = String(e);
+      }
+    });
+
+    document.getElementById('refreshDashboard')?.addEventListener('click', () => { void refreshDashboardData(); });
+    document.getElementById('refreshLog')?.addEventListener('click', () => { void refreshDashboardData(); });
+    document.getElementById('refreshInbox')?.addEventListener('click', () => { void refreshDashboardData(); });
+  } catch (e) {
+    console.error('dashboard init', e);
+  }
+}
+
+initDashboard();
 </script>
 </body></html>`;
 }
