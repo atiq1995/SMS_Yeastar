@@ -9,4 +9,10 @@
    - `YEASTAR_HTTP_PORT` = external port forwarded to Yeastar HTTP (e.g. 8080)
    - `YEASTAR_API_PORT` = external port forwarded to 5038 (often 5038)
 6. Keep `YEASTAR_SEND_ENABLED=false` until dashboard **Test Yeastar** succeeds.
-7. Outbound uses GET `/cgi/WebCGI` — format: `1500101=account=USER&password=PASS&port=1&destination=NUM&content=MSG` (see [Yeastar HTTP SMS docs](https://support.yeastar.com/hc/en-us/articles/217393078)).
+7. Outbound uses GET `/cgi/WebCGI` — common TG400 format:
+
+```text
+http://HOST:PORT/cgi/WebCGI?1500101=account&username=USER&password=PASS&port=1&number=TO&content=MSG
+```
+
+If your firmware uses `destination` instead of `number`, set `YEASTAR_DEST_PARAM=destination` in `.env`.

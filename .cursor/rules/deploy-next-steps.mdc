@@ -1,0 +1,35 @@
+---
+description: Always end code-change responses with push/pull deploy steps for EC2
+alwaysApply: true
+---
+
+# Deploy next steps
+
+After completing any code change in this repo, **always** end the response with a **What to do next** section.
+
+The user's workflow: push from local machine, then pull and restart on the AWS EC2 server.
+
+## Required closing section format
+
+Include concrete commands, not vague "deploy when ready":
+
+**Local (push):**
+```bash
+git add -A
+git commit -m "your message"
+git push
+```
+
+**Server (pull & restart):**
+```bash
+cd /opt/toms-sms
+git pull
+npm install          # only if package.json changed
+npm run db:migrate   # only if migrations changed
+npm run build
+sudo systemctl restart toms-sms
+```
+
+Omit steps that clearly don't apply (e.g. skip `npm install` for UI-only changes). Mention if the user needs to hard-refresh the ServiceM8 add-on iframe to see UI changes.
+
+Apply even for small fixes. Skip only for pure questions with no code changes.

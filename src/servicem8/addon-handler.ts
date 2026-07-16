@@ -16,12 +16,13 @@ import {
 import { sendSms } from "../yeastar/send.js";
 import { env } from "../config/env.js";
 import { processJobEvent } from "../workers/process-event.js";
-import { getJob, getCompany, jobCompanyUuid, createJobNote, createSmsTemplate, listSmsTemplates } from "./api.js";
+import { getJob, getCompany, jobCompanyUuid, createJobNote, createSmsTemplate, listSmsTemplates, getVendorName } from "./api.js";
 import { resolveAccessToken } from "./oauth.js";
 import { renderSmsBody } from "../engine/templates.js";
 import { buildJobTemplateContext } from "../engine/job-context.js";
 import { enqueueSend } from "../yeastar/queue.js";
 import { guardOutbound } from "../yeastar/guard.js";
+import { yeastarResultDetail } from "../yeastar/result.js";
 
 function accountUuid(payload: AddonJwt, args: Record<string, unknown>): string {
   return (
@@ -156,7 +157,12 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
       try {
         const dest = env.smsTestMobile || "0000000000";
         const result = await sendSms(dest, "SMS dashboard connection test");
-        sendInvokeJson(res, { ok: result.accepted, dryRun: result.dryRun, detail: result.rawResponse, to: dest });
+        sendInvokeJson(res, {
+          ok: result.accepted,
+          dryRun: result.dryRun,
+          detail: yeastarResultDetail(result),
+          to: dest,
+        });
       } catch (err) {
         sendInvokeJson(res, { ok: false, error: String(err) });
       }
@@ -191,7 +197,9 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
         return;
       }
       const company = await getCompany(token, cu);
-      const text = renderSmsBody(message, buildJobTemplateContext(j, company, toNumber, recipientName));
+      const vendorName = await getVendorName(token);
+      const ctx = buildJobTemplateContext(j, company, toNumber, recipientName);
+      const text = renderSmsBody(message, ctx, { job: j, vendorName });
       const guarded = guardOutbound(toNumber, text, jobId);
       if (!guarded.ok) {
         insertOutbound({
@@ -225,7 +233,7 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
             to_number: guarded.destination,
             body: text,
             status,
-            provider_response: result.rawResponse,
+            provider_response: yeastarResultDetail(result),
           });
           if (result.accepted) {
             void createJobNote(
@@ -234,7 +242,7 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
               `SMS sent to ${guarded.destination}${guarded.redirected ? ` (test redirect from ${toNumber})` : ""}: ${text}`
             ).catch((err) => console.error("job note failed", err));
           }
-          console.log("sms sent", jobId, guarded.destination, result.accepted);
+          console.log("sms sent", jobId, guarded.destination, result.accepted, yeastarResultDetail(result) || "");
         })
         .catch((err) => console.error("sms send failed", err));
       return;

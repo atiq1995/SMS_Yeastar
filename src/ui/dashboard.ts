@@ -143,8 +143,12 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
     <button type="button" id="refreshLog" class="secondary sm">Refresh</button>
   </div>
   <div class="card table-wrap" style="padding:0">
-    <table><thead><tr><th>When</th><th>To</th><th>Status</th><th>Body</th></tr></thead>
-    <tbody id="logList">${outbound.map((m) => `<tr><td>${esc(String(m.created_at))}</td><td>${esc(String(m.to_number))}</td><td>${esc(String(m.status))}</td><td>${esc(String(m.body).slice(0, 80))}</td></tr>`).join("") || '<tr><td colspan="4" class="empty">No outbound messages yet</td></tr>'}</tbody></table>
+    <table><thead><tr><th>When</th><th>To</th><th>Status</th><th>Detail</th><th>Body</th></tr></thead>
+    <tbody id="logList">${outbound.map((m) => {
+      const detail = String(m.provider_response ?? "").trim();
+      const detailShort = detail ? (detail.length > 80 ? detail.slice(0, 80) + "…" : detail) : (m.status === "failed" ? "No error recorded" : "");
+      return `<tr><td>${esc(String(m.created_at))}</td><td>${esc(String(m.to_number))}</td><td>${esc(String(m.status))}</td><td class="muted" title="${esc(detail)}">${esc(detailShort)}</td><td>${esc(String(m.body).slice(0, 80))}</td></tr>`;
+    }).join("") || '<tr><td colspan="5" class="empty">No outbound messages yet</td></tr>'}</tbody></table>
   </div>
 </div>
 
@@ -154,8 +158,19 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
     <button type="button" id="refreshInbox" class="secondary sm">Refresh</button>
   </div>
   <div class="card table-wrap" style="padding:0">
-    <table><thead><tr><th>When</th><th>From</th><th>Message</th></tr></thead>
-    <tbody id="inboxList">${inbound.map((m) => `<tr><td>${esc(String(m.received_at))}</td><td>${esc(String(m.from_number))}</td><td>${esc(String(m.body))}</td></tr>`).join("") || '<tr><td colspan="3" class="empty">No inbound messages yet</td></tr>'}</tbody></table>
+    <table><thead><tr><th>When</th><th>From</th><th>Message</th><th></th></tr></thead>
+    <tbody id="inboxList"></tbody></table>
+  </div>
+</div>
+
+<div id="inboxModal" class="modal-backdrop" aria-hidden="true">
+  <div class="modal" role="dialog" aria-labelledby="inboxModalTitle">
+    <h3 id="inboxModalTitle">Inbound message</h3>
+    <p class="muted" id="inboxModalMeta"></p>
+    <div class="preview-box" id="inboxModalBody"><span></span></div>
+    <div class="modal-actions">
+      <button type="button" class="secondary" id="inboxModalClose">Close</button>
+    </div>
   </div>
 </div>
 
@@ -229,6 +244,9 @@ const SM8_VARS = [
   { label: 'Job #', tag: '{job.generated_job_id}' },
   { label: 'Status', tag: '{job.status}' },
   { label: 'Address', tag: '{job.job_address}' },
+  { label: 'Service', tag: '{service.name}' },
+  { label: 'Description', tag: '{job.description}' },
+  { label: 'Company', tag: '{job.company_name}' },
   { label: 'Business', tag: '{vendor.name}' },
 ];
 const TRIGGERS = [
@@ -244,6 +262,8 @@ const SAMPLE = {
   address: '12 Oak St',
   companyName: "Tom's Pest Control",
   mobile: '0412 345 678',
+  jobDescription: 'General pest treatment',
+  jobCategory: 'Pest control',
 };
 
 let templates = ${tplJson};
@@ -253,9 +273,27 @@ const persistedTplIds = new Set(${JSON.stringify(templates.map((t) => t.id))});
 let nextTplId = ${maxTplId + 1};
 let nextRuleId = ${maxRuleId + 1};
 let editingTplId = null;
+let inboxMessages = ${JSON.stringify(
+    inbound.map((m) => ({
+      received_at: String(m.received_at ?? ""),
+      from_number: String(m.from_number ?? ""),
+      body: String(m.body ?? ""),
+    }))
+  )};
 
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+}
+
+function on(id, type, fn) {
+  var el = document.getElementById(id);
+  if (el) el.addEventListener(type, fn);
+}
+
+function logDetailText(m) {
+  var s = String(m.provider_response || '').trim();
+  if (!s && m.status === 'failed') return 'No error recorded';
+  return s.length > 80 ? s.slice(0, 80) + '…' : s;
 }
 
 function renderPreview(body) {
@@ -265,6 +303,11 @@ function renderPreview(body) {
 function snippet(body) {
   const text = renderPreview(body);
   return text.length > 72 ? text.slice(0, 72) + '…' : text;
+}
+
+function msgSnippet(body) {
+  const text = String(body || '');
+  return text.length > 80 ? text.slice(0, 80) + '…' : text;
 }
 
 function tidySmsWhitespace(text) {
@@ -286,6 +329,9 @@ function renderImportedPreview(body) {
     'job.status': SAMPLE.status,
     'job.job_address': SAMPLE.address,
     'job.address': SAMPLE.address,
+    'job.description': SAMPLE.jobDescription,
+    'job.category': SAMPLE.jobCategory,
+    'service.name': SAMPLE.jobDescription,
     'vendor.name': SAMPLE.companyName,
     'company.name': SAMPLE.customerName,
   };
@@ -295,6 +341,7 @@ function renderImportedPreview(body) {
 
 function showToast(id, msg, err) {
   const el = document.getElementById(id);
+  if (!el) return;
   el.textContent = msg;
   el.className = 'toast show' + (err ? ' err' : '');
   setTimeout(() => el.classList.remove('show'), 3000);
@@ -348,23 +395,61 @@ async function refreshDashboardData() {
 function renderLog(rows) {
   const el = document.getElementById('logList');
   if (!rows.length) {
-    el.innerHTML = '<tr><td colspan="4" class="empty">No outbound messages yet</td></tr>';
+    el.innerHTML = '<tr><td colspan="5" class="empty">No outbound messages yet</td></tr>';
     return;
   }
   el.innerHTML = rows.map((m) =>
-    '<tr><td>' + escHtml(m.created_at) + '</td><td>' + escHtml(m.to_number) + '</td><td>' + escHtml(m.status) + '</td><td>' + escHtml(String(m.body).slice(0, 80)) + '</td></tr>'
+    '<tr><td>' + escHtml(m.created_at) + '</td><td>' + escHtml(m.to_number) + '</td><td>' + escHtml(m.status) +
+    '</td><td class="muted" title="' + escHtml(String(m.provider_response || '')) + '">' + escHtml(logDetailText(m)) +
+    '</td><td>' + escHtml(String(m.body).slice(0, 80)) + '</td></tr>'
   ).join('');
 }
 
 function renderInbox(rows) {
+  inboxMessages = rows.map((m) => ({
+    received_at: String(m.received_at || ''),
+    from_number: String(m.from_number || ''),
+    body: String(m.body || ''),
+  }));
   const el = document.getElementById('inboxList');
-  if (!rows.length) {
-    el.innerHTML = '<tr><td colspan="3" class="empty">No inbound messages yet</td></tr>';
+  if (!inboxMessages.length) {
+    el.innerHTML = '<tr><td colspan="4" class="empty">No inbound messages yet</td></tr>';
     return;
   }
-  el.innerHTML = rows.map((m) =>
-    '<tr><td>' + escHtml(m.received_at) + '</td><td>' + escHtml(m.from_number) + '</td><td>' + escHtml(m.body) + '</td></tr>'
+  el.innerHTML = inboxMessages.map((m, i) =>
+    '<tr><td>' + escHtml(m.received_at) + '</td><td>' + escHtml(m.from_number) + '</td>' +
+    '<td class="tpl-snippet" title="' + escHtml(m.body) + '">' + escHtml(msgSnippet(m.body)) + '</td>' +
+    '<td><button type="button" class="secondary sm view-inbox" data-idx="' + i + '">View</button></td></tr>'
   ).join('');
+  el.querySelectorAll('.view-inbox').forEach((btn) => {
+    btn.addEventListener('click', () => openInboxModal(Number(btn.dataset.idx)));
+  });
+}
+
+function openInboxModal(idx) {
+  const m = inboxMessages[idx];
+  if (!m) return;
+  const modal = document.getElementById('inboxModal');
+  document.getElementById('inboxModalMeta').textContent = m.from_number + ' · ' + m.received_at;
+  document.querySelector('#inboxModalBody span').textContent = m.body || '(empty message)';
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+}
+
+function closeInboxModal() {
+  const modal = document.getElementById('inboxModal');
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+}
+
+function setupInboxModal() {
+  const modal = document.getElementById('inboxModal');
+  const closeBtn = document.getElementById('inboxModalClose');
+  if (!modal || !closeBtn) return;
+  closeBtn.addEventListener('click', closeInboxModal);
+  modal.addEventListener('click', (e) => {
+    if (e.target.id === 'inboxModal') closeInboxModal();
+  });
 }
 
 function bindTabs() {
@@ -648,11 +733,13 @@ function initDashboard() {
   try {
     setupTemplateModal();
     setupImportedTemplateModal();
+    setupInboxModal();
     renderTemplates();
     renderImportedTemplates();
     renderRules();
+    renderInbox(inboxMessages);
 
-    document.getElementById('toggleImportedTemplates')?.addEventListener('click', () => {
+    on('toggleImportedTemplates', 'click', () => {
       const card = document.getElementById('importedTemplatesCard');
       const btn = document.getElementById('toggleImportedTemplates');
       if (!card || !btn) return;
@@ -660,7 +747,7 @@ function initDashboard() {
       card.style.display = open ? 'none' : 'block';
       btn.textContent = open ? 'Show imported templates' : 'Hide imported templates';
     });
-    document.getElementById('toggleLocalTemplates')?.addEventListener('click', () => {
+    on('toggleLocalTemplates', 'click', () => {
       const card = document.getElementById('localTemplatesCard');
       const btn = document.getElementById('toggleLocalTemplates');
       const saveBtn = document.getElementById('saveTemplates');
@@ -673,7 +760,7 @@ function initDashboard() {
     const localCard = document.getElementById('localTemplatesCard');
     if (localCard) localCard.style.display = 'none';
 
-    document.getElementById('addRule')?.addEventListener('click', () => {
+    on('addRule', 'click', () => {
       rules.push({
         id: nextRuleId++,
         name: 'New rule',
@@ -685,7 +772,7 @@ function initDashboard() {
       renderRules();
     });
 
-    document.getElementById('saveTemplates')?.addEventListener('click', async () => {
+    on('saveTemplates', 'click', async () => {
       try {
         const payload = templates.map((t) => ({
           id: persistedTplIds.has(t.id) ? t.id : undefined,
@@ -711,7 +798,7 @@ function initDashboard() {
       }
     });
 
-    document.getElementById('saveRules')?.addEventListener('click', async () => {
+    on('saveRules', 'click', async () => {
       try {
         const payload = rules.map((r, i) => ({
           name: r.name,
@@ -732,7 +819,7 @@ function initDashboard() {
       }
     });
 
-    document.getElementById('saveSettings')?.addEventListener('click', async () => {
+    on('saveSettings', 'click', async () => {
       try {
         const res = parseInvoke(await invoke('sms_dashboard_save', {
           section: 'settings',
@@ -744,7 +831,7 @@ function initDashboard() {
       }
     });
 
-    document.getElementById('testYeastar')?.addEventListener('click', async () => {
+    on('testYeastar', 'click', async () => {
       try {
         const res = parseInvoke(await invoke('sms_test_yeastar', {}));
         document.getElementById('settingsOut').textContent = JSON.stringify(res);
@@ -753,9 +840,9 @@ function initDashboard() {
       }
     });
 
-    document.getElementById('refreshDashboard')?.addEventListener('click', () => { void refreshDashboardData(); });
-    document.getElementById('refreshLog')?.addEventListener('click', () => { void refreshDashboardData(); });
-    document.getElementById('refreshInbox')?.addEventListener('click', () => { void refreshDashboardData(); });
+    on('refreshDashboard', 'click', () => { void refreshDashboardData(); });
+    on('refreshLog', 'click', () => { void refreshDashboardData(); });
+    on('refreshInbox', 'click', () => { void refreshDashboardData(); });
   } catch (e) {
     console.error('dashboard init', e);
   }

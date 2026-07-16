@@ -1,4 +1,4 @@
-import { getJob, getCompany, jobCompanyUuid, resolveJobMobile } from "../servicem8/api.js";
+import { getJob, getCompany, jobCompanyUuid, resolveJobMobile, createJobNote, getVendorName } from "../servicem8/api.js";
 import { getAccessToken } from "../servicem8/oauth.js";
 import {
   getTemplate,
@@ -10,8 +10,8 @@ import { buildJobTemplateContext } from "../engine/job-context.js";
 import { renderSmsBody } from "../engine/templates.js";
 import { evaluateRules, inferTrigger } from "../engine/rules.js";
 import { enqueueSend } from "../yeastar/queue.js";
-import { createJobNote } from "../servicem8/api.js";
 import { guardOutbound } from "../yeastar/guard.js";
+import { yeastarResultDetail } from "../yeastar/result.js";
 
 export type ProcessInput = {
   account_uuid: string;
@@ -56,7 +56,7 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
   if (!tpl) return { sent: false, reason: "no_template" };
   if (!mobile) return { sent: false, reason: "no_mobile" };
 
-  const body = renderSmsBody(tpl.body, { ...ctx, status });
+  const body = renderSmsBody(tpl.body, { ...ctx, status }, { job, vendorName: await getVendorName(token) });
   const guarded = guardOutbound(mobile, body, jobUuid);
   if (!guarded.ok) {
     insertOutbound({
@@ -88,7 +88,7 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
     to_number: guarded.destination,
     body,
     status: statusValue,
-    provider_response: result.rawResponse,
+    provider_response: yeastarResultDetail(result),
     idempotency_key: input.idempotency_key + ":out",
   });
   if (result.accepted) {

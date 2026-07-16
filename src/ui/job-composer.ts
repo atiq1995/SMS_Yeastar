@@ -27,6 +27,8 @@ export type JobComposerModel = {
   thread: { dir: "out" | "in"; body: string; at: string; number: string }[];
   defaultTemplateId: string | null;
   vendorName: string;
+  jobDescription: string;
+  jobCategory: string;
   testMode: boolean;
   testModeLabel: string;
   error?: string;
@@ -50,6 +52,8 @@ export async function loadJobComposerModel(
     thread: [],
     defaultTemplateId: null,
     vendorName: "",
+    jobDescription: "",
+    jobCategory: "",
     testMode: isTestMode(),
     testModeLabel: testModeLabel(),
     error,
@@ -77,6 +81,8 @@ export async function loadJobComposerModel(
       getVendorName(token),
     ]);
     const enRoute = templates.find((t) => /en.?route/i.test(t.name));
+    const jobDescription = typeof job.description === "string" ? job.description : "";
+    const jobCategory = typeof job.category === "string" ? job.category : "";
 
     return {
       accountUuid,
@@ -89,6 +95,8 @@ export async function loadJobComposerModel(
       templates,
       thread,
       vendorName: vendorName ?? "",
+      jobDescription,
+      jobCategory,
       testMode: isTestMode(),
       testModeLabel: testModeLabel(),
       defaultTemplateId: enRoute?.id ?? templates[0]?.id ?? null,
@@ -154,6 +162,8 @@ export function renderJobComposerHtml(model: JobComposerModel): string {
     status: model.status,
     address: model.address,
     vendorName: model.vendorName,
+    jobDescription: model.jobDescription,
+    jobCategory: model.jobCategory,
   });
   const defaultTpl = model.defaultTemplateId ?? "";
 
@@ -251,6 +261,14 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 }
 
+function parseInvoke(res) {
+  if (res == null) return {};
+  if (typeof res === 'string') {
+    try { return JSON.parse(res); } catch (e) { return { error: res }; }
+  }
+  return res;
+}
+
 function tidySmsWhitespace(text) {
   return text
     .replace(/[ \t]{2,}/g, ' ')
@@ -261,6 +279,7 @@ function tidySmsWhitespace(text) {
 function renderPreview(text) {
   const customer = CTX.customerName || '';
   const parts = customer.trim().split(/\\s+/);
+  const desc = CTX.jobDescription || '';
   const sm8 = {
     'job.generated_job_id': CTX.jobNumber || '',
     'job.status': CTX.status || '',
@@ -269,6 +288,10 @@ function renderPreview(text) {
     'job.contact_first': parts[0] || customer,
     'job.contact_last': parts.slice(1).join(' '),
     'job.contact_name': customer,
+    'job.company_name': customer,
+    'job.description': desc,
+    'job.category': CTX.jobCategory || '',
+    'service.name': desc || CTX.jobCategory || '',
     'company.name': customer,
     'vendor.name': CTX.vendorName || '',
   };
@@ -357,12 +380,12 @@ btnSend?.addEventListener('click', async () => {
   btnSend.disabled = true;
   btnSend.textContent = 'Sending…';
   try {
-    const res = await invoke('sms_dashboard_send', {
+    const res = parseInvoke(await invoke('sms_dashboard_send', {
       job_uuid: jobUuid,
       to_number: to,
       recipient_name: recipientName,
       message: msgEl.value,
-    });
+    }));
     if (res.error) {
       showToast(res.hint ? res.error + ' — ' + res.hint : res.error, true);
       btnSend.disabled = false;

@@ -34,6 +34,12 @@ export const env = {
   yeastarUsername: opt("YEASTAR_USERNAME", ""),
   yeastarPassword: opt("YEASTAR_PASSWORD", ""),
   yeastarSimPort: optInt("YEASTAR_SIM_PORT", 1),
+  yeastarUseHttps: opt("YEASTAR_USE_HTTPS", "false") === "true",
+  yeastarWebCgiPath: opt("YEASTAR_WEBCGI_PATH", "/cgi/WebCGI"),
+  /** e.g. `1500101=account` → `?1500101=account&username=...` */
+  yeastarAccountQueryKey: opt("YEASTAR_ACCOUNT_QUERY_KEY", "1500101=account"),
+  /** TG firmware: `number` (common) or `destination` */
+  yeastarDestParam: opt("YEASTAR_DEST_PARAM", "number"),
   yeastarSendEnabled: opt("YEASTAR_SEND_ENABLED", "false") === "true",
   yeastarReceiveEnabled: opt("YEASTAR_RECEIVE_ENABLED", "true") === "true",
 
