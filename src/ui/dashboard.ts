@@ -8,6 +8,7 @@ import {
   listTemplates,
 } from "../db/repository.js";
 import { env } from "../config/env.js";
+import { APP_VERSION } from "../config/version.js";
 import { isTestMode, testModeLabel } from "../yeastar/guard.js";
 import { resolveAccessToken } from "../servicem8/oauth.js";
 import { createSmsTemplate, listSmsTemplates } from "../servicem8/api.js";
@@ -47,7 +48,7 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
 <script src="https://platform.servicem8.com/sdk/1.0/sdk.js"></script>
 <style>${SHARED_STYLES}</style></head>
 <body>
-<h1>SMS Dashboard</h1>
+<h1>SMS Dashboard <span class="version">v${esc(APP_VERSION)}</span></h1>
 <p class="muted">Account ${esc(accountUuid)}</p>
 <div class="tabs" id="tabs">
   <button type="button" class="tab active" data-tab="overview">Overview</button>

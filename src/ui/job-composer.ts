@@ -4,6 +4,7 @@ import { getJob, getCompany, jobCompanyUuid, listJobRecipients, listSmsTemplates
 import { resolveAccessToken } from "../servicem8/oauth.js";
 import { buildJobTemplateContext } from "../engine/job-context.js";
 import { isTestMode, testModeLabel } from "../yeastar/guard.js";
+import { APP_VERSION } from "../config/version.js";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -129,7 +130,7 @@ function renderError(model: JobComposerModel): string {
 <body>
 <div class="composer">
   <div class="composer-header">
-    <h1>Send SMS</h1>
+    <h1>Send SMS <span class="version">v${esc(APP_VERSION)}</span></h1>
     <button type="button" class="icon-btn" id="btnClose">×</button>
   </div>
   <div class="composer-error">
@@ -185,7 +186,7 @@ export function renderJobComposerHtml(model: JobComposerModel): string {
 <body>
 <div class="composer" role="dialog" aria-labelledby="composerTitle">
   <div class="composer-header">
-    <h1 id="composerTitle">Send SMS</h1>
+    <h1 id="composerTitle">Send SMS <span class="version">v${esc(APP_VERSION)}</span></h1>
     <button type="button" class="icon-btn" title="Close" id="btnClose">×</button>
   </div>
 

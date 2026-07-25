@@ -9,6 +9,17 @@ export const SHARED_STYLES = `
     background: #ffffff;
   }
   h1 { font-size: 1.25rem; margin: 0 0 12px; color: #111827; }
+  h1 .version {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    border-radius: 999px;
+    padding: 2px 8px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
   h2 { margin: 0; font-size: 1rem; color: #111827; }
   .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
   .tab {
