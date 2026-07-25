@@ -63,6 +63,19 @@ function sendInvokeJson(res: Response, data: unknown): void {
   res.json({ eventResponse: JSON.stringify(data) });
 }
 
+function webhookEntry(args: Record<string, unknown>): Record<string, unknown> | undefined {
+  const entry = args.entry;
+  if (Array.isArray(entry)) return entry[0] as Record<string, unknown>;
+  if (entry && typeof entry === "object") return entry as Record<string, unknown>;
+  return undefined;
+}
+
+function webhookChangedFields(args: Record<string, unknown>): string[] {
+  const raw = webhookEntry(args)?.changed_fields;
+  if (!Array.isArray(raw)) return [];
+  return raw.map((f) => String(f));
+}
+
 export async function handleAddonPost(req: Request, res: Response): Promise<void> {
   let payload: AddonJwt;
   try {
@@ -199,6 +212,7 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
       const company = await getCompany(token, cu);
       const vendorName = await getVendorName(token);
       const ctx = buildJobTemplateContext(j, company, toNumber, recipientName);
+      if (vendorName) ctx.vendorName = vendorName;
       const text = renderSmsBody(message, ctx, { job: j, vendorName });
       const guarded = guardOutbound(toNumber, text, jobId);
       if (!guarded.ok) {
@@ -254,17 +268,25 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
 
   const webhookish = event.includes("webhook") || payload.object === "job" || event.includes("job");
   if (webhookish || event === "job" || event.includes("status")) {
-    const objectId = job || (payload.entry?.uuid as string) || payload.object_uuid;
-    const status = (payload.entry?.status as string) || (args.status as string);
+    const entry = webhookEntry(args);
+    const changed = webhookChangedFields(args);
+    const objectId =
+      job ||
+      (typeof entry?.uuid === "string" ? entry.uuid : undefined) ||
+      (payload.entry?.uuid as string) ||
+      payload.object_uuid;
+    const status = (typeof entry?.status === "string" ? entry.status : undefined) || (args.status as string);
     const eventType = event.includes("create") ? "job.created" : event || "job.status";
     if (objectId && acct) {
+      const fieldsKey = changed.length ? changed.slice().sort().join(",") : "none";
       void processJobEvent({
         account_uuid: acct,
         event_type: eventType,
         object_type: "job",
         object_id: objectId,
         status,
-        idempotency_key: `${acct}:${eventType}:${objectId}:${status ?? ""}:${payload.iat ?? ""}`,
+        changed_fields: changed,
+        idempotency_key: `${acct}:${objectId}:${fieldsKey}:${payload.iat ?? ""}`,
       }).catch((err) => console.error("processJobEvent", err));
     }
     res.status(202).json({ accepted: true });

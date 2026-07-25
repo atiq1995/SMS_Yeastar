@@ -9,26 +9,25 @@ export type YeastarSendResult = {
   errorCode?: string;
 };
 
-/** Build WebCGI URL — matches working TG400 pattern: `?1500101=account&username=...&number=...` */
+/** Manual query string — URLSearchParams encodes `account=user` and breaks TG auth */
 function yeastarUrl(destination: string, message: string): string {
+  const enc = encodeURIComponent;
   const protocol = env.yeastarUseHttps ? "https" : "http";
-  const base = `${protocol}://${env.yeastarHost}:${env.yeastarHttpPort}${env.yeastarWebCgiPath}`;
-  const u = new URL(base);
-  const accountKey = env.yeastarAccountQueryKey;
-  const [k, v] = accountKey.includes("=") ? accountKey.split("=", 2) : ["1500101", "account"];
-  u.searchParams.set(k, v ?? "account");
-  u.searchParams.set("username", env.yeastarUsername);
-  u.searchParams.set("password", env.yeastarPassword);
-  u.searchParams.set("port", String(env.yeastarSimPort));
-  u.searchParams.set(env.yeastarDestParam, destination);
-  u.searchParams.set("content", message);
-  return u.toString();
+  return (
+    `${protocol}://${env.yeastarHost}:${env.yeastarHttpPort}${env.yeastarWebCgiPath}` +
+    `?1500101=account=${enc(env.yeastarUsername)}` +
+    `&password=${enc(env.yeastarPassword)}` +
+    `&port=${enc(String(env.yeastarSimPort))}` +
+    `&${env.yeastarDestParam}=${enc(destination)}` +
+    `&content=${enc(message)}`
+  );
 }
 
 function httpGet(url: string, timeoutMs: number): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const lib = url.startsWith("https:") ? https : http;
-    const req = lib.get(url, { timeout: timeoutMs }, (res) => {
+    // ponytail: TG400 returns non-standard HTTP — curl works; strict parser fails without this
+    const req = lib.get(url, { timeout: timeoutMs, insecureHTTPParser: true }, (res) => {
       const chunks: Buffer[] = [];
       res.on("data", (c) => chunks.push(c));
       res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8") }));
@@ -41,13 +40,11 @@ function httpGet(url: string, timeoutMs: number): Promise<{ status: number; body
   });
 }
 
-function yeastarAccepted(status: number, body: string): boolean {
-  if (/authentication failed/i.test(body)) return false;
-  if (/response:\s*success/i.test(body) || /\bsuccess\b/i.test(body)) return true;
-  return status >= 200 && status < 300 && body.length > 0 && !/response:\s*error/i.test(body);
+function yeastarAccepted(body: string): boolean {
+  return /response:\s*success/i.test(body) || (/\bsuccess\b/i.test(body) && !/authentication failed/i.test(body));
 }
 
-/** Yeastar TG WebCGI — GET /cgi/WebCGI per TG400 HTTP SMS API */
+/** Yeastar TG WebCGI — GET /cgi/WebCGI */
 export async function sendSms(destination: string, message: string): Promise<YeastarSendResult> {
   const url = yeastarUrl(destination, message);
 
@@ -58,7 +55,7 @@ export async function sendSms(destination: string, message: string): Promise<Yea
   requireYeastarSend();
   try {
     const { status, body } = await httpGet(url, 10_000);
-    const accepted = yeastarAccepted(status, body);
+    const accepted = yeastarAccepted(body);
     return {
       accepted,
       dryRun: false,

@@ -12,7 +12,7 @@
 7. Outbound uses GET `/cgi/WebCGI` — common TG400 format:
 
 ```text
-http://HOST:PORT/cgi/WebCGI?1500101=account&username=USER&password=PASS&port=1&number=TO&content=MSG
+http://HOST:PORT/cgi/WebCGI?1500101=account=USER&password=PASS&port=1&destination=TO&content=MSG
 ```
 
-If your firmware uses `destination` instead of `number`, set `YEASTAR_DEST_PARAM=destination` in `.env`.
+Some firmware uses `number` instead of `destination` — set `YEASTAR_DEST_PARAM=number` in `.env`.

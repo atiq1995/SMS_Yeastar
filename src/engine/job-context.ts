@@ -19,6 +19,8 @@ export function buildSm8Map(
   const address = ctx.address || jobStr(job, "job_address", "address");
   const description = jobStr(job, "description");
   const category = jobStr(job, "category");
+  // ponytail: only strings — objects become [object Object] in SMS
+  const vendor = typeof vendorName === "string" ? vendorName.trim() : typeof ctx.vendorName === "string" ? ctx.vendorName.trim() : "";
   return {
     "job.generated_job_id": ctx.jobNumber || jobStr(job, "generated_job_id"),
     "job.status": ctx.status || jobStr(job, "status"),
@@ -36,7 +38,8 @@ export function buildSm8Map(
     "job.phone_1": jobStr(job, "phone", "phone_1"),
     "job.site_name": jobStr(job, "site_name"),
     "service.name": description || category,
-    "vendor.name": vendorName || "",
+    "vendor.name": vendor,
+    vendor,
     "company.name": ctx.companyName || customer,
   };
 }

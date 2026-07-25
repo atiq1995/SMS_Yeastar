@@ -19,6 +19,7 @@ export type ProcessInput = {
   object_type?: string;
   object_id?: string;
   status?: string;
+  changed_fields?: string[];
   idempotency_key: string;
 };
 
@@ -47,7 +48,7 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
   const mobile = await resolveJobMobile(token, job, company);
   const ctx = buildJobTemplateContext(job, company, mobile);
   const status = input.status ?? ctx.status;
-  const trigger = inferTrigger(input.event_type, status);
+  const trigger = inferTrigger(input.event_type, status, input.changed_fields);
   if (!trigger) return { sent: false, reason: "no_trigger" };
 
   const rule = evaluateRules(listRules(), trigger, { ...ctx, status });

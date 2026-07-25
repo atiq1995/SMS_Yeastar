@@ -212,7 +212,7 @@ export function renderJobComposerHtml(model: JobComposerModel): string {
     <textarea id="message" placeholder="Type your message…"></textarea>
     <div class="char-row" id="charRow">
       <span id="segInfo">1 SMS segment</span>
-      <span id="charCount">0 / 160</span>
+      <span id="charCount">0 chars</span>
     </div>
 
     <div class="preview-bubble"><strong>Preview</strong><span id="preview"></span></div>
@@ -294,9 +294,16 @@ function renderPreview(text) {
     'service.name': desc || CTX.jobCategory || '',
     'company.name': customer,
     'vendor.name': CTX.vendorName || '',
+    'vendor': CTX.vendorName || '',
   };
-  let out = text.replace(/\\{([a-z0-9_.]+)\\}/gi, (_, k) => sm8[k.toLowerCase()] ?? '');
-  out = out.replace(/\\{\\{(\\w+)\\}\\}/g, (_, k) => CTX[k] ?? '');
+  // Leave {{handlebars}} for the next pass; only replace single-brace {job.xxx}
+  let out = text.replace(/\\{\\{[\\s\\S]*?\\}\\}|\\{([a-z0-9_.]+)\\}/gi, (match, k) =>
+    k == null ? match : (sm8[k.toLowerCase()] ?? '')
+  );
+  out = out.replace(/\\{\\{(\\w+)\\}\\}/g, (_, k) => {
+    const v = CTX[k];
+    return typeof v === 'string' ? v : '';
+  });
   return tidySmsWhitespace(out);
 }
 
@@ -329,9 +336,11 @@ function refresh() {
   previewEl.textContent = rendered || '(empty)';
   const len = rendered.length;
   const segs = len === 0 ? 0 : len <= 160 ? 1 : Math.ceil(len / 153);
-  charCountEl.textContent = len + ' / 160';
-  segInfoEl.textContent = segs <= 1 ? '1 SMS segment' : segs + ' SMS segments';
-  charRowEl.className = 'char-row' + (len > 160 ? ' warn' : '') + (len > 306 ? ' over' : '');
+  charCountEl.textContent = len + ' chars';
+  segInfoEl.textContent = segs <= 1
+    ? '1 SMS segment'
+    : segs + ' SMS segments (OK — sends as one message)';
+  charRowEl.className = 'char-row' + (len > 160 ? ' warn' : '');
   if (btnSend) btnSend.disabled = !rendered.trim();
 }
 
@@ -377,24 +386,24 @@ btnSend?.addEventListener('click', async () => {
   const opt = recipientEl.selectedOptions[0];
   const to = recipientEl.value;
   const recipientName = opt?.dataset.name || '';
+  const text = renderPreview(msgEl.value);
+  if (!text.trim()) return;
   btnSend.disabled = true;
   btnSend.textContent = 'Sending…';
   try {
+    // Send rendered text so preview === phone (server still strips any leftover tags)
     const res = parseInvoke(await invoke('sms_dashboard_send', {
       job_uuid: jobUuid,
       to_number: to,
       recipient_name: recipientName,
-      message: msgEl.value,
+      message: text,
     }));
     if (res.error) {
       showToast(res.hint ? res.error + ' — ' + res.hint : res.error, true);
-      btnSend.disabled = false;
-      btnSend.textContent = 'Send SMS';
       return;
     }
     showToast(res.queued ? 'SMS queued — sending shortly' : 'SMS sent');
     const thread = el('thread');
-    const text = renderPreview(msgEl.value);
     const div = document.createElement('div');
     div.className = 'msg out';
     div.innerHTML = '<div class="msg-bubble">' + escHtml(text) + '</div><div class="msg-meta">Sent · just now</div>';
@@ -403,7 +412,8 @@ btnSend?.addEventListener('click', async () => {
     setTimeout(closeModal, 1200);
   } catch (e) {
     showToast(String(e), true);
-    btnSend.disabled = false;
+  } finally {
+    btnSend.disabled = !renderPreview(msgEl.value).trim();
     btnSend.textContent = 'Send SMS';
   }
 });

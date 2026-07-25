@@ -8,6 +8,7 @@ export type TemplateContext = {
   address?: string;
   companyName?: string;
   mobile?: string;
+  vendorName?: string;
   [key: string]: string | undefined;
 };
 
@@ -24,15 +25,34 @@ function tidySmsWhitespace(text: string): string {
     .trim();
 }
 
+function onlyStrings(ctx: TemplateContext, vendorName?: string): TemplateContext {
+  const out: TemplateContext = {};
+  for (const [k, v] of Object.entries(ctx)) {
+    if (typeof v === "string") out[k] = v;
+  }
+  if (typeof vendorName === "string" && vendorName.trim()) out.vendorName = vendorName.trim();
+  return out;
+}
+
+function sm8Value(map: Record<string, string>, key: string): string {
+  const v = map[key.toLowerCase()];
+  return typeof v === "string" ? v : "";
+}
+
 /** ServiceM8 `{job.xxx}` tokens + our `{{var}}` Handlebars syntax */
 export function renderSmsBody(
   body: string,
   ctx: TemplateContext,
   opts?: { job?: Record<string, unknown>; vendorName?: string }
 ): string {
-  const sm8 = buildSm8Map(opts?.job ?? {}, ctx, opts?.vendorName);
-  // ponytail: unknown `{job.xxx}` → "" so customers never see raw tags; known empty fields → ""
-  const withSm8 = body.replace(/\{([a-z0-9_.]+)\}/gi, (_, key: string) => sm8[key.toLowerCase()] ?? "");
-  const rendered = /\{\{/.test(withSm8) ? renderTemplate(withSm8, ctx) : withSm8;
+  const vendorName = typeof opts?.vendorName === "string" ? opts.vendorName : undefined;
+  const hbCtx = onlyStrings(ctx, vendorName);
+  const sm8 = buildSm8Map(opts?.job ?? {}, hbCtx, vendorName);
+  // Leave `{{handlebars}}` alone; only replace single-brace ServiceM8 `{job.xxx}` tags.
+  // ponytail: unknown tags → "" so customers never see raw placeholders; never stringify objects.
+  const withSm8 = body.replace(/\{\{[\s\S]*?\}\}|\{([a-z0-9_.]+)\}/gi, (match, key: string | undefined) =>
+    key == null ? match : sm8Value(sm8, key)
+  );
+  const rendered = /\{\{/.test(withSm8) ? renderTemplate(withSm8, hbCtx) : withSm8;
   return tidySmsWhitespace(rendered);
 }

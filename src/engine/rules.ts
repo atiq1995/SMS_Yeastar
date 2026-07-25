@@ -30,9 +30,21 @@ export function evaluateRules(rules: RuleRow[], trigger: TriggerType, ctx: Templ
   return undefined;
 }
 
-export function inferTrigger(eventType: string, status?: string): TriggerType | undefined {
+export function inferTrigger(
+  eventType: string,
+  status?: string,
+  changedFields?: string[]
+): TriggerType | undefined {
+  const changed = (changedFields ?? []).map((f) => f.toLowerCase());
   const e = eventType.toLowerCase();
-  if (e.includes("create") || e === "job.created") return "job_created";
+  if (
+    e.includes("create") ||
+    e === "job.created" ||
+    changed.includes("uuid") ||
+    changed.includes("generated_job_id")
+  ) {
+    return "job_created";
+  }
   const s = (status ?? "").toLowerCase();
   if (s === "completed") return "completed";
   if (s.includes("route") || s === "dispatched") return "en_route";

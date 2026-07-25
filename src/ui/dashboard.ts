@@ -154,23 +154,17 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
 
 <div id="inbox" class="panel">
   <div class="panel-head">
-    <div><h2>Inbox</h2></div>
+    <div>
+      <h2>Inbox</h2>
+      <p class="muted" style="margin:4px 0 0">Click a number to see the full conversation (sent + received).</p>
+    </div>
     <button type="button" id="refreshInbox" class="secondary sm">Refresh</button>
   </div>
-  <div class="card table-wrap" style="padding:0">
-    <table><thead><tr><th>When</th><th>From</th><th>Message</th><th></th></tr></thead>
-    <tbody id="inboxList"></tbody></table>
-  </div>
-</div>
-
-<div id="inboxModal" class="modal-backdrop" aria-hidden="true">
-  <div class="modal" role="dialog" aria-labelledby="inboxModalTitle">
-    <h3 id="inboxModalTitle">Inbound message</h3>
-    <p class="muted" id="inboxModalMeta"></p>
-    <div class="preview-box" id="inboxModalBody"><span></span></div>
-    <div class="modal-actions">
-      <button type="button" class="secondary" id="inboxModalClose">Close</button>
+  <div class="card inbox-layout" style="padding:0">
+    <div class="inbox-thread" id="inboxThread">
+      <div class="empty">Select a number to view the conversation</div>
     </div>
+    <div class="inbox-numbers" id="inboxNumbers"></div>
   </div>
 </div>
 
@@ -273,13 +267,22 @@ const persistedTplIds = new Set(${JSON.stringify(templates.map((t) => t.id))});
 let nextTplId = ${maxTplId + 1};
 let nextRuleId = ${maxRuleId + 1};
 let editingTplId = null;
-let inboxMessages = ${JSON.stringify(
+let inboundRows = ${JSON.stringify(
     inbound.map((m) => ({
       received_at: String(m.received_at ?? ""),
       from_number: String(m.from_number ?? ""),
       body: String(m.body ?? ""),
     }))
   )};
+let outboundRows = ${JSON.stringify(
+    outbound.map((m) => ({
+      created_at: String(m.created_at ?? ""),
+      to_number: String(m.to_number ?? ""),
+      body: String(m.body ?? ""),
+      status: String(m.status ?? ""),
+    }))
+  )};
+let selectedPhoneKey = null;
 
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
@@ -308,6 +311,18 @@ function snippet(body) {
 function msgSnippet(body) {
   const text = String(body || '');
   return text.length > 80 ? text.slice(0, 80) + '…' : text;
+}
+
+function phoneKey(n) {
+  const d = String(n || '').replace(/\\D/g, '');
+  return d.length >= 9 ? d.slice(-9) : d;
+}
+
+function formatPhoneDisplay(n) {
+  const d = String(n || '').replace(/\\D/g, '');
+  if (d.length === 10) return d.slice(0, 4) + ' ' + d.slice(4, 7) + ' ' + d.slice(7);
+  if (d.length === 11 && d.startsWith('61')) return '0' + d.slice(2, 5) + ' ' + d.slice(5, 8) + ' ' + d.slice(8);
+  return String(n || '');
 }
 
 function tidySmsWhitespace(text) {
@@ -368,12 +383,16 @@ function applyDashboardData(data) {
     importedTemplates = data.importedTemplates;
     renderImportedTemplates();
   }
-  if (Array.isArray(data.outbound)) renderLog(data.outbound);
-  if (Array.isArray(data.inbound)) renderInbox(data.inbound);
+  if (Array.isArray(data.outbound)) {
+    outboundRows = data.outbound;
+    renderLog(data.outbound);
+  }
+  if (Array.isArray(data.inbound)) inboundRows = data.inbound;
+  if (Array.isArray(data.outbound) || Array.isArray(data.inbound)) renderInbox();
   if (typeof data.sent7d === 'number') {
     document.getElementById('statSent7d').textContent = String(data.sent7d);
     document.getElementById('analyticsSent7d').textContent = String(data.sent7d);
-    const inboundCount = Array.isArray(data.inbound) ? data.inbound.length : 0;
+    const inboundCount = Array.isArray(data.inbound) ? data.inbound.length : inboundRows.length;
     document.getElementById('analyticsInbound').textContent = String(inboundCount);
   }
 }
@@ -405,51 +424,86 @@ function renderLog(rows) {
   ).join('');
 }
 
-function renderInbox(rows) {
-  inboxMessages = rows.map((m) => ({
-    received_at: String(m.received_at || ''),
-    from_number: String(m.from_number || ''),
-    body: String(m.body || ''),
-  }));
-  const el = document.getElementById('inboxList');
-  if (!inboxMessages.length) {
-    el.innerHTML = '<tr><td colspan="4" class="empty">No inbound messages yet</td></tr>';
+function buildConversations() {
+  const map = new Map();
+  const touch = (number, body, at, dir) => {
+    const key = phoneKey(number);
+    if (!key) return;
+    const prev = map.get(key);
+    if (!prev || String(at) > String(prev.last_at)) {
+      map.set(key, { key, number: String(number || ''), last_body: String(body || ''), last_at: String(at || ''), last_dir: dir });
+    } else if (prev && String(number || '').length > String(prev.number || '').length) {
+      prev.number = String(number || '');
+    }
+  };
+  for (const m of outboundRows) touch(m.to_number, m.body, m.created_at, 'out');
+  for (const m of inboundRows) touch(m.from_number, m.body, m.received_at, 'in');
+  return Array.from(map.values()).sort((a, b) => String(b.last_at).localeCompare(String(a.last_at)));
+}
+
+function messagesForKey(key) {
+  const msgs = [];
+  for (const m of outboundRows) {
+    if (phoneKey(m.to_number) === key) {
+      msgs.push({ dir: 'out', body: String(m.body || ''), at: String(m.created_at || ''), number: String(m.to_number || '') });
+    }
+  }
+  for (const m of inboundRows) {
+    if (phoneKey(m.from_number) === key) {
+      msgs.push({ dir: 'in', body: String(m.body || ''), at: String(m.received_at || ''), number: String(m.from_number || '') });
+    }
+  }
+  msgs.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  return msgs;
+}
+
+function renderInboxThread(key) {
+  const el = document.getElementById('inboxThread');
+  if (!el) return;
+  if (!key) {
+    el.innerHTML = '<div class="empty">Select a number to view the conversation</div>';
     return;
   }
-  el.innerHTML = inboxMessages.map((m, i) =>
-    '<tr><td>' + escHtml(m.received_at) + '</td><td>' + escHtml(m.from_number) + '</td>' +
-    '<td class="tpl-snippet" title="' + escHtml(m.body) + '">' + escHtml(msgSnippet(m.body)) + '</td>' +
-    '<td><button type="button" class="secondary sm view-inbox" data-idx="' + i + '">View</button></td></tr>'
+  const msgs = messagesForKey(key);
+  if (!msgs.length) {
+    el.innerHTML = '<div class="empty">No messages for this number</div>';
+    return;
+  }
+  el.innerHTML = '<div class="inbox-thread-list">' + msgs.map((m) =>
+    '<div class="msg ' + m.dir + '">' +
+    '<div class="msg-bubble">' + escHtml(m.body) + '</div>' +
+    '<div class="msg-meta">' + (m.dir === 'out' ? 'Sent' : 'Received') + ' · ' + escHtml(m.at) + '</div>' +
+    '</div>'
+  ).join('') + '</div>';
+  el.scrollTop = el.scrollHeight;
+}
+
+function renderInbox() {
+  const listEl = document.getElementById('inboxNumbers');
+  if (!listEl) return;
+  const conversations = buildConversations();
+  if (!conversations.length) {
+    listEl.innerHTML = '<div class="empty">No conversations yet</div>';
+    selectedPhoneKey = null;
+    renderInboxThread(null);
+    return;
+  }
+  if (!selectedPhoneKey || !conversations.some((c) => c.key === selectedPhoneKey)) {
+    selectedPhoneKey = conversations[0].key;
+  }
+  listEl.innerHTML = conversations.map((c) =>
+    '<button type="button" class="inbox-number' + (c.key === selectedPhoneKey ? ' active' : '') + '" data-key="' + escHtml(c.key) + '">' +
+    '<strong>' + escHtml(formatPhoneDisplay(c.number)) + '</strong>' +
+    '<span class="muted">' + escHtml(msgSnippet(c.last_body)) + '</span>' +
+    '</button>'
   ).join('');
-  el.querySelectorAll('.view-inbox').forEach((btn) => {
-    btn.addEventListener('click', () => openInboxModal(Number(btn.dataset.idx)));
+  listEl.querySelectorAll('.inbox-number').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      selectedPhoneKey = btn.dataset.key;
+      renderInbox();
+    });
   });
-}
-
-function openInboxModal(idx) {
-  const m = inboxMessages[idx];
-  if (!m) return;
-  const modal = document.getElementById('inboxModal');
-  document.getElementById('inboxModalMeta').textContent = m.from_number + ' · ' + m.received_at;
-  document.querySelector('#inboxModalBody span').textContent = m.body || '(empty message)';
-  modal.classList.add('open');
-  modal.setAttribute('aria-hidden', 'false');
-}
-
-function closeInboxModal() {
-  const modal = document.getElementById('inboxModal');
-  modal.classList.remove('open');
-  modal.setAttribute('aria-hidden', 'true');
-}
-
-function setupInboxModal() {
-  const modal = document.getElementById('inboxModal');
-  const closeBtn = document.getElementById('inboxModalClose');
-  if (!modal || !closeBtn) return;
-  closeBtn.addEventListener('click', closeInboxModal);
-  modal.addEventListener('click', (e) => {
-    if (e.target.id === 'inboxModal') closeInboxModal();
-  });
+  renderInboxThread(selectedPhoneKey);
 }
 
 function bindTabs() {
@@ -733,11 +787,10 @@ function initDashboard() {
   try {
     setupTemplateModal();
     setupImportedTemplateModal();
-    setupInboxModal();
     renderTemplates();
     renderImportedTemplates();
     renderRules();
-    renderInbox(inboxMessages);
+    renderInbox();
 
     on('toggleImportedTemplates', 'click', () => {
       const card = document.getElementById('importedTemplatesCard');
