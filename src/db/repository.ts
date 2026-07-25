@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { env } from "../config/env.js";
 import { defaultRules, defaultTemplates } from "../engine/triggers.js";
+import { normalizeInboundBody } from "../yeastar/sms-decode.js";
 
 let _db: Database.Database | undefined;
 
@@ -92,7 +93,12 @@ export function listJobThread(jobUuid: string, limit = 20): ThreadMessage[] {
     .all(jobUuid, limit) as { body: string; at: string; number: string }[];
   const merged: ThreadMessage[] = [
     ...outbound.map((m) => ({ dir: "out" as const, body: m.body, at: m.at, number: m.number })),
-    ...inbound.map((m) => ({ dir: "in" as const, body: m.body, at: m.at, number: m.number })),
+    ...inbound.map((m) => ({
+      dir: "in" as const,
+      body: normalizeInboundBody(m.body),
+      at: m.at,
+      number: m.number,
+    })),
   ];
   merged.sort((a, b) => String(b.at).localeCompare(String(a.at)));
   return merged.slice(0, limit).reverse();
@@ -124,7 +130,14 @@ export function insertOutbound(row: {
 }
 
 export function listInbound(limit = 100): Record<string, unknown>[] {
-  return db().prepare("SELECT * FROM inbound_messages ORDER BY id DESC LIMIT ?").all(limit) as Record<string, unknown>[];
+  const rows = db().prepare("SELECT * FROM inbound_messages ORDER BY id DESC LIMIT ?").all(limit) as Record<
+    string,
+    unknown
+  >[];
+  return rows.map((r) => ({
+    ...r,
+    body: typeof r.body === "string" ? normalizeInboundBody(r.body) : r.body,
+  }));
 }
 
 export function insertInbound(from_number: string, body: string, port?: number, job_uuid?: string): number {
