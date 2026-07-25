@@ -272,9 +272,16 @@ function parseInvoke(res) {
 
 function tidySmsWhitespace(text) {
   return text
-    .replace(/[ \t]{2,}/g, ' ')
-    .replace(/\s+([,.!?;:])/g, '$1')
+    .replace(/\\u00AD/g, '')
+    .replace(/[ \\t]{2,}/g, ' ')
+    .replace(/\\s+([,.!?;:])/g, '$1')
     .trim();
+}
+
+function isSm8FieldTag(key) {
+  const k = String(key || '').toLowerCase();
+  if (k === 'document' || k === 'vendor') return true;
+  return /^(job|vendor|company|service|location|staff|asset|form)\\.[a-z0-9_.]+$/.test(k);
 }
 
 function renderPreview(text) {
@@ -292,15 +299,20 @@ function renderPreview(text) {
     'job.company_name': customer,
     'job.description': desc,
     'job.category': CTX.jobCategory || '',
+    'job.total_price': '',
     'service.name': desc || CTX.jobCategory || '',
     'company.name': customer,
     'vendor.name': CTX.vendorName || '',
     'vendor': CTX.vendorName || '',
+    'document': '[invoice link]',
+    'location.phone_1': '',
   };
-  // Leave {{handlebars}} for the next pass; only replace single-brace {job.xxx}
-  let out = text.replace(/\\{\\{[\\s\\S]*?\\}\\}|\\{([a-z0-9_.]+)\\}/gi, (match, k) =>
-    k == null ? match : (sm8[k.toLowerCase()] ?? '')
-  );
+  // Only known ServiceM8 tags — unknown {ss} etc. stay visible
+  let out = text.replace(/\\{\\{[\\s\\S]*?\\}\\}|\\{([a-z0-9_.]+)\\}/gi, (match, k) => {
+    if (k == null) return match;
+    if (!isSm8FieldTag(k)) return match;
+    return sm8[k.toLowerCase()] ?? '';
+  });
   out = out.replace(/\\{\\{(\\w+)\\}\\}/g, (_, k) => {
     const v = CTX[k];
     return typeof v === 'string' ? v : '';

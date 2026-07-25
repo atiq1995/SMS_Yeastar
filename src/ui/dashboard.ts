@@ -157,15 +157,15 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
   <div class="panel-head">
     <div>
       <h2>Inbox</h2>
-      <p class="muted" style="margin:4px 0 0">Click a number to see the full conversation (sent + received).</p>
+      <p class="muted" style="margin:4px 0 0">Numbers on the left · full conversation on the right</p>
     </div>
     <button type="button" id="refreshInbox" class="secondary sm">Refresh</button>
   </div>
   <div class="card inbox-layout" style="padding:0">
+    <div class="inbox-numbers" id="inboxNumbers"></div>
     <div class="inbox-thread" id="inboxThread">
       <div class="empty">Select a number to view the conversation</div>
     </div>
-    <div class="inbox-numbers" id="inboxNumbers"></div>
   </div>
 </div>
 
@@ -458,25 +458,49 @@ function messagesForKey(key) {
   return msgs;
 }
 
+function formatInboxTime(at) {
+  const s = String(at || '');
+  if (!s) return '';
+  const d = new Date(s.includes('T') || s.includes('Z') || s.includes('-') ? s : s.replace(' ', 'T'));
+  if (Number.isNaN(d.getTime())) return s.slice(0, 16);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const t = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (sameDay) return t;
+  return d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' + t;
+}
+
 function renderInboxThread(key) {
   const el = document.getElementById('inboxThread');
   if (!el) return;
   if (!key) {
-    el.innerHTML = '<div class="empty">Select a number to view the conversation</div>';
+    el.innerHTML = '<div class="inbox-thread-empty empty">Select a number to view the conversation</div>';
     return;
   }
+  const conversations = buildConversations();
+  const conv = conversations.find((c) => c.key === key);
   const msgs = messagesForKey(key);
+  const header =
+    '<div class="inbox-thread-head">' +
+    '<div>' +
+    '<strong>' + escHtml(formatPhoneDisplay(conv ? conv.number : key)) + '</strong>' +
+    '<span class="muted">' + msgs.length + ' message' + (msgs.length === 1 ? '' : 's') + '</span>' +
+    '</div></div>';
   if (!msgs.length) {
-    el.innerHTML = '<div class="empty">No messages for this number</div>';
+    el.innerHTML = header + '<div class="inbox-thread-empty empty">No messages for this number</div>';
     return;
   }
-  el.innerHTML = '<div class="inbox-thread-list">' + msgs.map((m) =>
+  // WhatsApp-style: oldest → newest top-to-bottom; open scrolled to latest (bottom)
+  el.innerHTML = header + '<div class="inbox-thread-list" id="inboxThreadList">' + msgs.map((m) =>
     '<div class="msg ' + m.dir + '">' +
     '<div class="msg-bubble">' + escHtml(m.body) + '</div>' +
-    '<div class="msg-meta">' + (m.dir === 'out' ? 'Sent' : 'Received') + ' · ' + escHtml(m.at) + '</div>' +
+    '<div class="msg-meta">' + (m.dir === 'out' ? 'Sent' : 'Received') + ' · ' + escHtml(formatInboxTime(m.at)) + '</div>' +
     '</div>'
   ).join('') + '</div>';
-  el.scrollTop = el.scrollHeight;
+  const list = document.getElementById('inboxThreadList');
+  if (list) {
+    requestAnimationFrame(() => { list.scrollTop = list.scrollHeight; });
+  }
 }
 
 function renderInbox() {
@@ -492,10 +516,16 @@ function renderInbox() {
   if (!selectedPhoneKey || !conversations.some((c) => c.key === selectedPhoneKey)) {
     selectedPhoneKey = conversations[0].key;
   }
-  listEl.innerHTML = conversations.map((c) =>
+  listEl.innerHTML = '<div class="inbox-numbers-head">Conversations</div>' + conversations.map((c) =>
     '<button type="button" class="inbox-number' + (c.key === selectedPhoneKey ? ' active' : '') + '" data-key="' + escHtml(c.key) + '">' +
+    '<div class="inbox-number-top">' +
     '<strong>' + escHtml(formatPhoneDisplay(c.number)) + '</strong>' +
-    '<span class="muted">' + escHtml(msgSnippet(c.last_body)) + '</span>' +
+    '<span class="inbox-number-time">' + escHtml(formatInboxTime(c.last_at)) + '</span>' +
+    '</div>' +
+    '<div class="inbox-number-preview">' +
+    '<span class="inbox-dir ' + c.last_dir + '">' + (c.last_dir === 'out' ? 'You' : 'Them') + '</span>' +
+    '<span class="inbox-number-body">' + escHtml(msgSnippet(c.last_body)) + '</span>' +
+    '</div>' +
     '</button>'
   ).join('');
   listEl.querySelectorAll('.inbox-number').forEach((btn) => {

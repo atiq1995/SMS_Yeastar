@@ -37,10 +37,14 @@ export function buildSm8Map(
     "job.mobile": ctx.mobile || jobStr(job, "mobile"),
     "job.phone_1": jobStr(job, "phone", "phone_1"),
     "job.site_name": jobStr(job, "site_name"),
+    "job.total_price": jobStr(job, "total_price", "total", "invoice_total"),
     "service.name": description || category,
     "vendor.name": vendor,
     vendor,
     "company.name": ctx.companyName || customer,
+    // ponytail: Yeastar can't mint ServiceM8 portal links — leave a clear marker
+    document: "[invoice link]",
+    "location.phone_1": jobStr(job, "phone", "phone_1") || (typeof ctx.mobile === "string" ? ctx.mobile : ""),
   };
 }
 

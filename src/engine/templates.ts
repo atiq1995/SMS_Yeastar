@@ -20,6 +20,7 @@ export function renderTemplate(body: string, ctx: TemplateContext): string {
 /** Collapse gaps left when a placeholder resolves to empty */
 function tidySmsWhitespace(text: string): string {
   return text
+    .replace(/\u00AD/g, "") // soft hyphens (invisible, can split words like busine-ss)
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+([,.!?;:])/g, "$1")
     .trim();
@@ -39,6 +40,13 @@ function sm8Value(map: Record<string, string>, key: string): string {
   return typeof v === "string" ? v : "";
 }
 
+/** Only real ServiceM8 merge fields — never eat random `{ss}` inside words */
+export function isSm8FieldTag(key: string): boolean {
+  const k = key.toLowerCase();
+  if (k === "document" || k === "vendor") return true;
+  return /^(job|vendor|company|service|location|staff|asset|form)\.[a-z0-9_.]+$/.test(k);
+}
+
 /** ServiceM8 `{job.xxx}` tokens + our `{{var}}` Handlebars syntax */
 export function renderSmsBody(
   body: string,
@@ -48,11 +56,13 @@ export function renderSmsBody(
   const vendorName = typeof opts?.vendorName === "string" ? opts.vendorName : undefined;
   const hbCtx = onlyStrings(ctx, vendorName);
   const sm8 = buildSm8Map(opts?.job ?? {}, hbCtx, vendorName);
-  // Leave `{{handlebars}}` alone; only replace single-brace ServiceM8 `{job.xxx}` tags.
-  // ponytail: unknown tags → "" so customers never see raw placeholders; never stringify objects.
-  const withSm8 = body.replace(/\{\{[\s\S]*?\}\}|\{([a-z0-9_.]+)\}/gi, (match, key: string | undefined) =>
-    key == null ? match : sm8Value(sm8, key)
-  );
+  // Leave `{{handlebars}}` alone; only replace known ServiceM8 `{job.xxx}` tags.
+  // Unknown `{...}` stays visible so typos like busine{ss} don't silently become "busine".
+  const withSm8 = body.replace(/\{\{[\s\S]*?\}\}|\{([a-z0-9_.]+)\}/gi, (match, key: string | undefined) => {
+    if (key == null) return match;
+    if (!isSm8FieldTag(key)) return match;
+    return sm8Value(sm8, key);
+  });
   const rendered = /\{\{/.test(withSm8) ? renderTemplate(withSm8, hbCtx) : withSm8;
   return tidySmsWhitespace(rendered);
 }

@@ -184,36 +184,42 @@ export const SHARED_STYLES = `
   .modal-actions button { margin-bottom: 0; }
   .inbox-layout {
     display: flex;
-    min-height: 380px;
+    min-height: 420px;
+    height: 520px;
+    max-height: 560px;
     align-items: stretch;
-  }
-  .inbox-thread {
-    flex: 1;
-    min-width: 0;
-    padding: 14px;
-    overflow-y: auto;
-    background: #fff;
-  }
-  .inbox-thread-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+    overflow: hidden;
   }
   .inbox-numbers {
-    width: 220px;
+    width: 280px;
     flex-shrink: 0;
-    border-left: 1px solid #e5e7eb;
+    border-right: 1px solid #e5e7eb;
+    overflow-x: hidden;
     overflow-y: auto;
-    background: #f9fafb;
+    background: #f8fafc;
+    min-height: 0;
+  }
+  .inbox-numbers-head {
+    padding: 10px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6b7280;
+    border-bottom: 1px solid #e5e7eb;
+    background: #f1f5f9;
+    position: sticky;
+    top: 0;
+    z-index: 1;
   }
   .inbox-number {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
+    align-items: stretch;
+    gap: 6px;
     width: 100%;
     text-align: left;
-    padding: 12px;
+    padding: 12px 14px;
     border: none;
     border-bottom: 1px solid #e5e7eb;
     border-radius: 0;
@@ -221,30 +227,114 @@ export const SHARED_STYLES = `
     color: #1f2937;
     cursor: pointer;
   }
-  .inbox-number:hover { background: #f3f4f6; }
-  .inbox-number.active { background: #eff6ff; border-left: 3px solid #3b82f6; }
-  .inbox-number strong { font-size: 13px; }
-  .inbox-number .muted {
+  .inbox-number:hover { background: #fff; }
+  .inbox-number.active {
+    background: #fff;
+    box-shadow: inset 3px 0 0 #3b82f6;
+  }
+  .inbox-number-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .inbox-number strong { font-size: 13px; color: #111827; }
+  .inbox-number-time {
+    font-size: 10px;
+    color: #9ca3af;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .inbox-number-preview {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    min-width: 0;
+  }
+  .inbox-dir {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 4px;
+    line-height: 1.4;
+  }
+  .inbox-dir.out { background: #dbeafe; color: #1d4ed8; }
+  .inbox-dir.in { background: #e5e7eb; color: #374151; }
+  .inbox-number-body {
+    flex: 1;
+    min-width: 0;
+    color: #6b7280;
+    font-size: 12px;
+    line-height: 1.35;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    font-size: 11px;
   }
-  .inbox-thread .msg { display: flex; flex-direction: column; max-width: 88%; }
+  .inbox-thread {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    overflow: hidden;
+  }
+  .inbox-thread-head {
+    padding: 12px 16px;
+    border-bottom: 1px solid #e5e7eb;
+    background: #fafafa;
+    flex-shrink: 0;
+  }
+  .inbox-thread-head strong {
+    display: block;
+    font-size: 14px;
+    color: #111827;
+  }
+  .inbox-thread-head .muted { font-size: 11px; }
+  .inbox-thread-empty {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .inbox-thread-list {
+    flex: 1;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: #f8fafc;
+    -webkit-overflow-scrolling: touch;
+  }
+  .inbox-thread .msg { display: flex; flex-direction: column; max-width: 78%; flex-shrink: 0; }
   .inbox-thread .msg.out { align-self: flex-end; align-items: flex-end; margin-left: auto; }
   .inbox-thread .msg.in { align-self: flex-start; }
   .inbox-thread .msg-bubble {
-    padding: 8px 11px;
-    border-radius: 12px;
+    padding: 9px 12px;
+    border-radius: 14px;
     font-size: 13px;
-    line-height: 1.4;
+    line-height: 1.45;
     white-space: pre-wrap;
     word-break: break-word;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
   }
-  .inbox-thread .msg.out .msg-bubble { background: #3b82f6; color: #fff; border-bottom-right-radius: 4px; }
-  .inbox-thread .msg.in .msg-bubble { background: #f3f4f6; color: #1f2937; border-bottom-left-radius: 4px; }
-  .inbox-thread .msg-meta { font-size: 10px; color: #9ca3af; margin-top: 3px; padding: 0 4px; }
+  .inbox-thread .msg.out .msg-bubble {
+    background: #3b82f6;
+    color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+  .inbox-thread .msg.in .msg-bubble {
+    background: #fff;
+    color: #1f2937;
+    border: 1px solid #e5e7eb;
+    border-bottom-left-radius: 4px;
+  }
+  .inbox-thread .msg-meta { font-size: 10px; color: #9ca3af; margin-top: 4px; padding: 0 4px; }
 `;
 
 export const COMPOSER_STYLES = `

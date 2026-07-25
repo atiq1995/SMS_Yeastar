@@ -8,7 +8,6 @@ assert.equal(
   "Hi from Tom's Pest Control."
 );
 
-// Objects must never become [object Object] in the SMS body
 assert.equal(
   renderSmsBody("Hi from {vendor.name}.", ctx, { vendorName: { name: "Nope" } as unknown as string }),
   "Hi from."
@@ -24,6 +23,13 @@ assert.doesNotMatch(
     vendorName: { broken: true } as unknown as string,
   }),
   /\[object Object\]/
+);
+
+// Unknown {ss} must NOT be stripped (that turned "business" into "busine")
+assert.equal(renderSmsBody("Thank you for your busine{ss}.", ctx, {}), "Thank you for your busine{ss}.");
+assert.equal(
+  renderSmsBody("Thank you for your business. {vendor.name}", ctx, { vendorName: "Tom's Pest Control" }),
+  "Thank you for your business. Tom's Pest Control"
 );
 
 console.log("templates self-check ok");
