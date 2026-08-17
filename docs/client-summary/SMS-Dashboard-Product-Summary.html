@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ServiceM8 SMS Dashboard — Product Summary</title>
+  <style>
+    @page { size: A4; margin: 16mm 14mm; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", Calibri, Arial, sans-serif;
+      color: #1f2937;
+      line-height: 1.45;
+      font-size: 11pt;
+      margin: 0;
+    }
+    h1 { font-size: 22pt; margin: 0 0 6px; color: #0f172a; letter-spacing: -0.02em; }
+    h2 { font-size: 14pt; margin: 22px 0 8px; color: #0f172a; border-bottom: 2px solid #3b82f6; padding-bottom: 4px; }
+    h3 { font-size: 11.5pt; margin: 14px 0 6px; color: #1e3a8a; }
+    p { margin: 0 0 8px; }
+    .subtitle { font-size: 12pt; color: #475569; margin: 0 0 4px; }
+    .meta { font-size: 9.5pt; color: #64748b; margin-bottom: 18px; }
+    .hero {
+      background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 60%);
+      border: 1px solid #bfdbfe;
+      border-radius: 10px;
+      padding: 16px 18px;
+      margin-bottom: 16px;
+    }
+    .hero p { margin: 0; font-size: 11.5pt; }
+    ul { margin: 0 0 10px; padding-left: 18px; }
+    li { margin-bottom: 4px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 10px 0 14px; }
+    .card {
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 12px 14px;
+      background: #fff;
+      break-inside: avoid;
+    }
+    .card strong { display: block; color: #0f172a; margin-bottom: 4px; font-size: 11pt; }
+    .card p { margin: 0; font-size: 10pt; color: #475569; }
+    .shot {
+      margin: 10px 0 16px;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .shot img {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+    }
+    .shot.narrow { max-width: 320px; margin-left: auto; margin-right: auto; }
+    .caption {
+      font-size: 9pt;
+      color: #64748b;
+      text-align: center;
+      margin-top: 6px;
+    }
+    .flow {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 10.5pt;
+      margin: 8px 0 14px;
+    }
+    .flow code {
+      font-family: Consolas, monospace;
+      font-size: 9.5pt;
+      background: #e2e8f0;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 10pt; margin: 8px 0 14px; }
+    th, td { border: 1px solid #e2e8f0; padding: 7px 8px; text-align: left; vertical-align: top; }
+    th { background: #f1f5f9; color: #334155; }
+    .footer {
+      margin-top: 24px;
+      padding-top: 10px;
+      border-top: 1px solid #e2e8f0;
+      font-size: 9pt;
+      color: #64748b;
+    }
+    .badge {
+      display: inline-block;
+      background: #dbeafe;
+      color: #1d4ed8;
+      font-size: 9pt;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 999px;
+      margin-right: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="hero">
+    <span class="badge">ServiceM8 Add-on</span>
+    <span class="badge">Yeastar SMS Gateway</span>
+    <h1 style="margin-top:10px">SMS Dashboard</h1>
+    <p class="subtitle">Automated &amp; manual SMS for field-service businesses — inside ServiceM8</p>
+    <p class="meta">Product overview for partners &amp; clients · Version 1.0 · Demo screenshots included</p>
+    <p>A cloud-hosted SMS platform that lives inside <strong>ServiceM8</strong>. Staff manage templates, automation rules, delivery logs, and customer replies from one dashboard. Messages go out through the customer’s own <strong>Yeastar TG400</strong> gateway (their SIMs, their numbers) — no third-party SMS credit middleman.</p>
+  </div>
+
+  <h2>What it does</h2>
+  <p>When a job is created, a technician goes en route, or a job is completed, the system can automatically text the customer. Staff can also open any job and send a one-off SMS with a live preview. Customer replies appear in an inbox matched to the job by phone number.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <strong>Automatic job SMS</strong>
+      <p>Rules fire on job created, status change, en route, or completed — using your message templates.</p>
+    </div>
+    <div class="card">
+      <strong>Manual Send SMS</strong>
+      <p>From any job card: pick recipient + template, preview, send — without leaving ServiceM8.</p>
+    </div>
+    <div class="card">
+      <strong>Two-way inbox</strong>
+      <p>Inbound replies from the Yeastar gateway show up in a conversation-style inbox.</p>
+    </div>
+    <div class="card">
+      <strong>Delivery log &amp; analytics</strong>
+      <p>See what was sent, status, and 7-day volume. Test the gateway from Settings.</p>
+    </div>
+  </div>
+
+  <h2>Who it’s for</h2>
+  <ul>
+    <li>Trades and field-service businesses on ServiceM8 that own (or will buy) a Yeastar TG400</li>
+    <li>Teams that want branded SMS from their own SIM numbers, not a shared SaaS sender ID</li>
+    <li>Owners who don’t want a PC running 24/7 in the office — the app runs in the cloud</li>
+  </ul>
+
+  <h2>Demo — Overview</h2>
+  <div class="shot">
+    <img src="screenshots/overview.png" alt="SMS Dashboard Overview">
+    <p class="caption">Overview tab — outbound volume, gateway status, and quick stats</p>
+  </div>
+
+  <h2>Demo — Automation rules</h2>
+  <div class="shot">
+    <img src="screenshots/rules.png" alt="Automation rules">
+    <p class="caption">Rules tab — map job events to templates (booking confirmed, en route, completed, quote follow-up)</p>
+  </div>
+
+  <h2>Demo — Inbox</h2>
+  <div class="shot">
+    <img src="screenshots/inbox.png" alt="SMS Inbox">
+    <p class="caption">Inbox — customer replies threaded by number, matched to the related job</p>
+  </div>
+
+  <h2>Demo — Send SMS from a job</h2>
+  <div class="shot narrow">
+    <img src="screenshots/send-sms.png" alt="Send SMS composer">
+    <p class="caption">Job action modal — recipient, template, live preview, send</p>
+  </div>
+
+  <h2>How it works (simple)</h2>
+  <div class="flow">
+    <p><strong>1.</strong> ServiceM8 job event or staff action → cloud SMS app<br>
+       <strong>2.</strong> App loads full job + customer from ServiceM8 API<br>
+       <strong>3.</strong> Rules/templates build the message → Yeastar TG400 sends via office SIMs<br>
+       <strong>4.</strong> Customer replies → shown in Inbox</p>
+    <p style="margin-top:10px;margin-bottom:0"><code>ServiceM8</code> → <code>Cloud app (AWS)</code> → <code>Office router</code> → <code>Yeastar TG400</code></p>
+  </div>
+
+  <h2>Key selling points</h2>
+  <table>
+    <thead>
+      <tr><th>Point</th><th>Why it matters</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Lives inside ServiceM8</td><td>No separate login for day-to-day SMS — staff already know the workflow</td></tr>
+      <tr><td>Uses client’s Yeastar hardware</td><td>Own SIMs, own numbers, predictable mobile costs</td></tr>
+      <tr><td>Cloud hosted</td><td>No always-on office PC; works while the site router + Yeastar stay powered</td></tr>
+      <tr><td>Automation + manual</td><td>Cover standard lifecycle texts and one-off messages</td></tr>
+      <tr><td>Safe rollout</td><td>Dry-run / UAT mode until go-live; rate-limited sends protect the gateway</td></tr>
+    </tbody>
+  </table>
+
+  <h2>What’s included for the buyer</h2>
+  <ul>
+    <li>ServiceM8 add-on (SMS Dashboard menu + Send SMS job action)</li>
+    <li>Cloud backend (templates, rules, outbound log, inbox, settings)</li>
+    <li>Yeastar TG400 outbound + inbound integration</li>
+    <li>Setup for AWS hosting, router port-forward, and UAT testing</li>
+  </ul>
+
+  <h2>What the client site needs</h2>
+  <ul>
+    <li>ServiceM8 account</li>
+    <li>Yeastar TG400 (or equivalent supported gateway) with SIM(s)</li>
+    <li>Office router with a static public IP and simple port-forward rules</li>
+    <li>Domain/DNS for HTTPS in production (temporary hostname works for testing)</li>
+  </ul>
+
+  <h2>Suggested positioning for sales</h2>
+  <p><em>“Keep customers informed automatically — booking confirmed, tech on the way, job done — using your own SMS hardware, without leaving ServiceM8.”</em></p>
+
+  <div class="footer">
+    <p>Demo screenshots use sample data for illustration. Branding and templates are configured per client.</p>
+    <p>Product: ServiceM8 SMS Dashboard · Partner sales pack</p>
+  </div>
+
+</body>
+</html>

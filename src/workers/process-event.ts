@@ -1,4 +1,4 @@
-import { getJob, getCompany, jobCompanyUuid, resolveJobMobile, createJobNote, getVendorName } from "../servicem8/api.js";
+import { getJob, getCompany, jobCompanyUuid, createJobNote, getVendorName } from "../servicem8/api.js";
 import { getAccessToken } from "../servicem8/oauth.js";
 import {
   getTemplate,
@@ -9,6 +9,7 @@ import {
 import { buildJobTemplateContext } from "../engine/job-context.js";
 import { renderSmsBody } from "../engine/templates.js";
 import { evaluateRules, inferTrigger } from "../engine/rules.js";
+import { resolveRuleRecipient } from "../engine/recipient.js";
 import { enqueueSend } from "../yeastar/queue.js";
 import { guardOutbound } from "../yeastar/guard.js";
 import { yeastarResultDetail } from "../yeastar/result.js";
@@ -45,60 +46,80 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
   const companyUuid = jobCompanyUuid(job);
   if (!companyUuid) return { sent: false, reason: "no_company" };
   const company = await getCompany(token, companyUuid);
-  const mobile = await resolveJobMobile(token, job, company);
-  const ctx = buildJobTemplateContext(job, company, mobile);
+  const ctx = buildJobTemplateContext(job, company);
   const status = input.status ?? ctx.status;
   const trigger = inferTrigger(input.event_type, status, input.changed_fields);
   if (!trigger) return { sent: false, reason: "no_trigger" };
 
-  const rule = evaluateRules(listRules(), trigger, { ...ctx, status });
-  if (!rule) return { sent: false, reason: "no_rule" };
-  const tpl = getTemplate(rule.template_id);
-  if (!tpl) return { sent: false, reason: "no_template" };
-  if (!mobile) return { sent: false, reason: "no_mobile" };
+  const matched = evaluateRules(listRules(), trigger, { ...ctx, status });
+  if (!matched.length) return { sent: false, reason: "no_rule" };
 
-  const body = renderSmsBody(tpl.body, { ...ctx, status }, { job, vendorName: await getVendorName(token) });
-  const guarded = guardOutbound(mobile, body, jobUuid);
-  if (!guarded.ok) {
+  const vendorName = await getVendorName(token);
+  let sentAny = false;
+  let lastFail: string | undefined;
+
+  for (const rule of matched) {
+    const tpl = getTemplate(rule.template_id);
+    if (!tpl) {
+      console.warn("automation skip", rule.id, "no_template");
+      lastFail = "no_template";
+      continue;
+    }
+    const mobile = await resolveRuleRecipient(rule, token, job, company);
+    if (!mobile) {
+      console.warn("automation skip", rule.id, "no_mobile");
+      lastFail = "no_mobile";
+      continue;
+    }
+
+    const body = renderSmsBody(tpl.body, { ...ctx, status, mobile }, { job, vendorName });
+    const idem = `${input.idempotency_key}:out:${rule.id}`;
+    const guarded = guardOutbound(mobile, body, jobUuid);
+    if (!guarded.ok) {
+      insertOutbound({
+        account_uuid: input.account_uuid,
+        job_uuid: jobUuid,
+        to_number: mobile,
+        body,
+        status: "blocked_test_mode",
+        provider_response: guarded.reason,
+        idempotency_key: idem,
+      });
+      lastFail = guarded.reason;
+      continue;
+    }
+    const result = await enqueueSend(guarded.destination, guarded.message, { jobUuid });
+    const statusValue = guarded.redirected
+      ? result.accepted
+        ? result.dryRun
+          ? "test_redirected_dry_run"
+          : "test_redirected"
+        : "failed"
+      : result.accepted
+        ? result.dryRun
+          ? "dry_run"
+          : "sent"
+        : "failed";
     insertOutbound({
       account_uuid: input.account_uuid,
       job_uuid: jobUuid,
-      to_number: mobile,
+      to_number: guarded.destination,
       body,
-      status: "blocked_test_mode",
-      provider_response: guarded.reason,
-      idempotency_key: input.idempotency_key + ":out",
+      status: statusValue,
+      provider_response: yeastarResultDetail(result),
+      idempotency_key: idem,
     });
-    return { sent: false, reason: guarded.reason };
-  }
-  const result = await enqueueSend(guarded.destination, guarded.message, { jobUuid });
-  const statusValue = guarded.redirected
-    ? result.accepted
-      ? result.dryRun
-        ? "test_redirected_dry_run"
-        : "test_redirected"
-      : "failed"
-    : result.accepted
-      ? result.dryRun
-        ? "dry_run"
-        : "sent"
-      : "failed";
-  insertOutbound({
-    account_uuid: input.account_uuid,
-    job_uuid: jobUuid,
-    to_number: guarded.destination,
-    body,
-    status: statusValue,
-    provider_response: yeastarResultDetail(result),
-    idempotency_key: input.idempotency_key + ":out",
-  });
-  if (result.accepted) {
-    void createJobNote(
-      token,
-      jobUuid,
-      `SMS sent to ${guarded.destination}${guarded.redirected ? ` (test redirect from ${mobile})` : ""}: ${body}`
-    ).catch((err) => console.error("job note failed", err));
+    if (result.accepted) {
+      sentAny = true;
+      void createJobNote(
+        token,
+        jobUuid,
+        `SMS sent to ${guarded.destination}${guarded.redirected ? ` (test redirect from ${mobile})` : ""}: ${body}`
+      ).catch((err) => console.error("job note failed", err));
+    } else {
+      lastFail = result.errorCode;
+    }
   }
 
-  return { sent: result.accepted, reason: result.accepted ? undefined : result.errorCode };
+  return { sent: sentAny, reason: sentAny ? undefined : lastFail };
 }

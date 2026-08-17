@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS rules (
   template_id INTEGER NOT NULL REFERENCES templates(id),
   enabled INTEGER NOT NULL DEFAULT 1,
   sort_order INTEGER NOT NULL DEFAULT 0,
+  recipient_type TEXT NOT NULL DEFAULT 'job_contact',
+  recipient_number TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

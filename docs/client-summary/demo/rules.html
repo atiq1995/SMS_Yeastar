@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SMS Dashboard — Rules</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 16px; color: #1f2937; background: #fff; }
+    h1 { font-size: 1.25rem; margin: 0 0 4px; color: #111827; }
+    h1 .version { font-size: 12px; font-weight: 600; color: #6b7280; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 999px; padding: 2px 8px; margin-left: 8px; }
+    h2 { margin: 0; font-size: 1rem; }
+    .muted { color: #6b7280; font-size: 12px; margin: 0 0 16px; }
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .tab { padding: 8px 12px; border: 1px solid #d1d5db; background: #f9fafb; color: #374151; border-radius: 6px; font-size: 13px; }
+    .tab.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+    .panel { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+    .panel-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; gap: 12px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 10px 8px; border-bottom: 1px solid #e5e7eb; background: #f3f4f6; color: #374151; font-weight: 600; }
+    td { padding: 10px 8px; border-bottom: 1px solid #f3f4f6; }
+    button { padding: 8px 14px; background: #3b82f6; color: #fff; border: none; border-radius: 6px; font-size: 13px; }
+    button.secondary { background: #fff; color: #374151; border: 1px solid #d1d5db; }
+    .hint { font-size: 11px; color: #6b7280; margin: 12px 0 0; }
+    .on { color: #065f46; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>SMS Dashboard <span class="version">v1.0.7</span></h1>
+  <p class="muted">ServiceM8 Add-on · SMS Dashboard</p>
+  <div class="tabs">
+    <span class="tab">Overview</span>
+    <span class="tab active">Rules</span>
+    <span class="tab">Templates</span>
+    <span class="tab">Log</span>
+    <span class="tab">Inbox</span>
+    <span class="tab">Analytics</span>
+    <span class="tab">Settings</span>
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Automation rules</h2>
+        <p class="muted" style="margin:4px 0 0">Choose when to send SMS and which template to use.</p>
+      </div>
+      <button class="secondary">+ Add rule</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr><th>Rule name</th><th>When</th><th>Status match</th><th>Template</th><th>On</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Booking confirmed</td><td>Job created</td><td>—</td><td>booking_confirmed</td><td class="on">Yes</td></tr>
+          <tr><td>Technician on the way</td><td>Technician en route</td><td>En Route, Dispatched</td><td>en_route</td><td class="on">Yes</td></tr>
+          <tr><td>Job completed thank you</td><td>Job completed</td><td>Completed</td><td>job_complete</td><td class="on">Yes</td></tr>
+          <tr><td>Quote follow-up</td><td>Status changed</td><td>Quote</td><td>quote_followup</td><td class="on">Yes</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="hint"><strong>When:</strong> Job created · Status changed · En route · Job completed</p>
+    <div style="margin-top:16px"><button>Save rules</button></div>
+  </div>
+</body>
+</html>

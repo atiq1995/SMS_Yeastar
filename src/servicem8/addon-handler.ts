@@ -9,6 +9,7 @@ import {
   insertOutbound,
   getSingleOAuthTokens,
   listTemplates,
+  listRules,
   listOutbound,
   listInbound,
   countOutboundSince,
@@ -149,18 +150,38 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
       }
       if (section === "rules" && Array.isArray(args.rules)) {
         replaceRules(
-          (args.rules as { name: string; trigger_type: string; status_match?: string; template_id: number; enabled?: number }[]).map(
-            (r, i) => ({
-              name: r.name,
-              trigger_type: r.trigger_type,
-              status_match: r.status_match ?? null,
-              template_id: r.template_id,
-              enabled: r.enabled ?? 1,
-              sort_order: i,
-            })
-          )
+          (args.rules as {
+            name: string;
+            trigger_type: string;
+            status_match?: string;
+            template_id: number;
+            enabled?: number;
+            recipient_type?: string;
+            recipient_number?: string;
+          }[]).map((r, i) => ({
+            name: r.name,
+            trigger_type: r.trigger_type,
+            status_match: r.status_match ?? null,
+            template_id: r.template_id,
+            enabled: r.enabled ?? 1,
+            sort_order: i,
+            recipient_type: r.recipient_type ?? "job_contact",
+            recipient_number: r.recipient_number ?? null,
+          }))
         );
-        sendInvokeJson(res, { ok: true });
+        sendInvokeJson(res, {
+          ok: true,
+          rules: listRules().map((r) => ({
+            id: r.id,
+            name: r.name,
+            trigger_type: r.trigger_type,
+            status_match: r.status_match ?? "",
+            template_id: r.template_id,
+            enabled: !!r.enabled,
+            recipient_type: r.recipient_type || "job_contact",
+            recipient_number: r.recipient_number ?? "",
+          })),
+        });
         return;
       }
       sendInvokeJson(res, { ok: false, error: "unknown_section" });

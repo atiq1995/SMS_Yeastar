@@ -20,6 +20,8 @@ export type RuleRow = {
   template_id: number;
   enabled: number;
   sort_order: number;
+  recipient_type: string;
+  recipient_number: string | null;
 };
 
 export function getSetting(key: string): string | undefined {
@@ -49,7 +51,11 @@ export function upsertTemplate(name: string, body: string, id?: number): number 
 }
 
 export function listRules(): RuleRow[] {
-  return db().prepare("SELECT * FROM rules ORDER BY sort_order, id").all() as RuleRow[];
+  return (db().prepare("SELECT * FROM rules ORDER BY sort_order, id").all() as RuleRow[]).map((r) => ({
+    ...r,
+    recipient_type: r.recipient_type || "job_contact",
+    recipient_number: r.recipient_number ?? null,
+  }));
 }
 
 export type RuleInput = {
@@ -59,16 +65,20 @@ export type RuleInput = {
   template_id: number;
   enabled?: number;
   sort_order?: number;
+  recipient_type?: string | null;
+  recipient_number?: string | null;
 };
 export function replaceRules(rules: RuleInput[]): void {
   const d = db();
   const tx = d.transaction(() => {
     d.prepare("DELETE FROM rules").run();
     const ins = d.prepare(
-      "INSERT INTO rules(name, trigger_type, status_match, template_id, enabled, sort_order) VALUES(?,?,?,?,?,?)"
+      "INSERT INTO rules(name, trigger_type, status_match, template_id, enabled, sort_order, recipient_type, recipient_number) VALUES(?,?,?,?,?,?,?,?)"
     );
     rules.forEach((r, i) => {
-      ins.run(r.name, r.trigger_type, r.status_match ?? null, r.template_id, r.enabled ?? 1, r.sort_order ?? i);
+      const type = r.recipient_type === "company_primary" || r.recipient_type === "custom" ? r.recipient_type : "job_contact";
+      const number = type === "custom" ? (r.recipient_number?.replace(/\s+/g, "") || null) : null;
+      ins.run(r.name, r.trigger_type, r.status_match ?? null, r.template_id, r.enabled ?? 1, r.sort_order ?? i, type, number);
     });
   });
   tx();

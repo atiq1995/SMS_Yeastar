@@ -32,6 +32,43 @@ export const SHARED_STYLES = `
     font-size: 13px;
   }
   .tab.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+  .rule-cards { display: flex; flex-direction: column; gap: 10px; }
+  .rule-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .rule-card.off { opacity: 0.55; }
+  .rule-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+  .rule-card-top strong { font-size: 14px; color: #111827; }
+  .rule-card p { margin: 6px 0 10px; }
+  .rule-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #374151;
+    margin: 0;
+    white-space: nowrap;
+  }
+  .rule-toggle input { width: auto; margin: 0; }
+  .radio-list { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 12px; }
+  .radio-list label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+    margin: 0;
+    cursor: pointer;
+  }
+  .radio-list input { width: auto; margin: 0; }
   .panel {
     display: none;
     background: #fafafa;

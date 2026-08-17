@@ -219,6 +219,24 @@ export async function listCompanyContacts(accessToken: string, companyUuid: stri
   return listFiltered(accessToken, "companycontact", `company_uuid eq '${companyUuid}' and active eq 1`);
 }
 
+/** Primary company contact mobile, then company record phone */
+export async function resolveCompanyPrimaryMobile(
+  accessToken: string,
+  job: ServiceM8Job,
+  company: ServiceM8Company
+): Promise<string | undefined> {
+  const companyUuid = jobCompanyUuid(job) || (typeof company.uuid === "string" ? company.uuid : undefined);
+  if (companyUuid) {
+    const contacts = await listCompanyContacts(accessToken, companyUuid);
+    const primary = contacts.find((c) => c.is_primary_contact === "1" || c.is_primary_contact === 1);
+    if (primary) {
+      const mobile = pickPhone(primary);
+      if (mobile) return mobile;
+    }
+  }
+  return pickPhone(company);
+}
+
 /** Mobile is often on job/company contacts, not the company record itself */
 export async function resolveJobMobile(
   accessToken: string,

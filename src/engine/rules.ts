@@ -4,30 +4,34 @@ import { getSetting } from "../db/repository.js";
 
 export type TriggerType = "job_created" | "status_changed" | "en_route" | "completed";
 
-export function evaluateRules(rules: RuleRow[], trigger: TriggerType, ctx: TemplateContext): RuleRow | undefined {
+export function evaluateRules(
+  rules: RuleRow[],
+  trigger: TriggerType,
+  ctx: TemplateContext,
+  enRouteStatuses?: string
+): RuleRow[] {
   const status = (ctx.status ?? "").trim();
-  const enRoute = (getSetting("en_route_statuses") ?? "En Route,Dispatched")
+  const enRoute = (enRouteStatuses ?? getSetting("en_route_statuses") ?? "En Route,Dispatched")
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
 
-  for (const rule of rules) {
-    if (!rule.enabled) continue;
-    if (rule.trigger_type !== trigger) continue;
+  return rules.filter((rule) => {
+    if (!rule.enabled) return false;
+    if (rule.trigger_type !== trigger) return false;
     if (trigger === "status_changed" && rule.status_match) {
-      if (status.toLowerCase() !== rule.status_match.trim().toLowerCase()) continue;
+      if (status.toLowerCase() !== rule.status_match.trim().toLowerCase()) return false;
     }
     if (trigger === "en_route") {
-      if (!enRoute.includes(status.toLowerCase())) continue;
+      if (!enRoute.includes(status.toLowerCase())) return false;
     }
     if (trigger === "completed") {
       if (status.toLowerCase() !== "completed" && rule.status_match?.toLowerCase() !== status.toLowerCase()) {
-        if (status.toLowerCase() !== "completed") continue;
+        if (status.toLowerCase() !== "completed") return false;
       }
     }
-    return rule;
-  }
-  return undefined;
+    return true;
+  });
 }
 
 export function inferTrigger(

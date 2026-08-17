@@ -38,6 +38,8 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
       status_match: r.status_match ?? "",
       template_id: r.template_id,
       enabled: !!r.enabled,
+      recipient_type: r.recipient_type || "job_contact",
+      recipient_number: r.recipient_number ?? "",
     }))
   );
   const maxTplId = templates.reduce((m, t) => Math.max(m, t.id), 0);
@@ -52,7 +54,7 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
 <p class="muted">Account ${esc(accountUuid)}</p>
 <div class="tabs" id="tabs">
   <button type="button" class="tab active" data-tab="overview">Overview</button>
-  <button type="button" class="tab" data-tab="rules">Rules</button>
+  <button type="button" class="tab" data-tab="rules">Automation</button>
   <button type="button" class="tab" data-tab="templates">Templates</button>
   <button type="button" class="tab" data-tab="log">Log</button>
   <button type="button" class="tab" data-tab="inbox">Inbox</button>
@@ -75,29 +77,14 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
 <div id="rules" class="panel">
   <div class="panel-head">
     <div>
-      <h2>Automation rules</h2>
-      <p class="muted" style="margin:4px 0 0">Choose when to send SMS and which template to use.</p>
+      <h2>Automation</h2>
+      <p class="muted" style="margin:4px 0 0">When to send, what to say, and who gets the SMS.</p>
     </div>
-    <button type="button" id="addRule" class="secondary">+ Add rule</button>
+    <button type="button" id="addRule" class="secondary">+ Add automation</button>
   </div>
-  <div class="card table-wrap" style="padding:0">
-    <table>
-      <thead>
-        <tr>
-          <th>Rule name</th>
-          <th>When</th>
-          <th>Status match</th>
-          <th>Template</th>
-          <th>On</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody id="ruleList"></tbody>
-    </table>
-  </div>
-  <p class="hint"><strong>When:</strong> Job created · Status changed · En route · Job completed</p>
+  <div class="rule-cards" id="ruleList"></div>
   <div class="actions">
-    <button type="button" id="saveRules">Save rules</button>
+    <button type="button" id="saveRules">Save automations</button>
     <span id="rulesToast" class="toast"></span>
   </div>
 </div>
@@ -207,6 +194,38 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
   </div>
 </div>
 
+<div id="ruleModal" class="modal-backdrop" aria-hidden="true">
+  <div class="modal" role="dialog" aria-labelledby="ruleModalTitle">
+    <h3 id="ruleModalTitle">Add automation</h3>
+    <label for="ruleName">Name</label>
+    <input type="text" id="ruleName" placeholder="e.g. Booking confirmed" />
+    <label for="ruleTrigger">When</label>
+    <select id="ruleTrigger"></select>
+    <div id="ruleStatusWrap">
+      <label for="ruleStatus">Status becomes</label>
+      <input type="text" id="ruleStatus" placeholder="e.g. Quote, Work Order" />
+      <p class="hint">Must match the ServiceM8 status label exactly</p>
+    </div>
+    <label for="ruleTemplate">Message</label>
+    <select id="ruleTemplate"></select>
+    <div class="preview-box" id="rulePreview"><strong>Sample SMS</strong><span></span></div>
+    <label>Send to</label>
+    <div class="radio-list">
+      <label><input type="radio" name="ruleRecipient" value="job_contact" checked /> Customer (job contact)</label>
+      <label><input type="radio" name="ruleRecipient" value="company_primary" /> Company primary contact</label>
+      <label><input type="radio" name="ruleRecipient" value="custom" /> This number</label>
+    </div>
+    <div id="ruleCustomWrap" style="display:none">
+      <label for="ruleRecipientNumber">Mobile number</label>
+      <input type="text" id="ruleRecipientNumber" placeholder="04xx xxx xxx" />
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="secondary" id="ruleModalCancel">Cancel</button>
+      <button type="button" id="ruleModalSave">Done</button>
+    </div>
+  </div>
+</div>
+
 <div id="importedTemplateModal" class="modal-backdrop" aria-hidden="true">
   <div class="modal" role="dialog" aria-labelledby="importedTemplateModalTitle">
     <h3 id="importedTemplateModalTitle">Add ServiceM8 template</h3>
@@ -268,6 +287,7 @@ const persistedTplIds = new Set(${JSON.stringify(templates.map((t) => t.id))});
 let nextTplId = ${maxTplId + 1};
 let nextRuleId = ${maxRuleId + 1};
 let editingTplId = null;
+let editingRuleId = null;
 let inboundRows = ${JSON.stringify(
     inbound.map((m) => ({
       received_at: String(m.received_at ?? ""),
@@ -378,6 +398,11 @@ function applyDashboardData(data) {
     templates.forEach((t) => persistedTplIds.add(t.id));
     nextTplId = templates.reduce((m, t) => Math.max(m, t.id), 0) + 1;
     renderTemplates();
+    renderRules();
+  }
+  if (Array.isArray(data.rules)) {
+    rules = data.rules;
+    nextRuleId = rules.reduce((m, t) => Math.max(m, t.id), 0) + 1;
     renderRules();
   }
   if (Array.isArray(data.importedTemplates)) {
@@ -562,52 +587,153 @@ function templateOptions(selected) {
   ).join('');
 }
 
-function statusMatchEnabled(trigger) {
-  return trigger === 'status_changed' || trigger === 'completed';
+function recipientLabel(r) {
+  if (r.recipient_type === 'company_primary') return 'the company primary contact';
+  if (r.recipient_type === 'custom') return r.recipient_number ? r.recipient_number : 'a custom number';
+  return 'the customer';
 }
 
-function bindRuleRow(row) {
-  const id = Number(row.dataset.ruleId);
-  const rule = rules.find((r) => r.id === id);
-  if (!rule) return;
-  row.querySelector('.rule-name').addEventListener('input', (e) => { rule.name = e.target.value; });
-  row.querySelector('.rule-trigger').addEventListener('change', (e) => {
-    rule.trigger_type = e.target.value;
-    const statusInput = row.querySelector('.rule-status');
-    const on = statusMatchEnabled(rule.trigger_type);
-    statusInput.disabled = !on;
-    statusInput.style.opacity = on ? '1' : '0.45';
-    if (!on) { statusInput.value = ''; rule.status_match = ''; }
+function whenLabel(r) {
+  if (r.trigger_type === 'status_changed') {
+    return r.status_match ? 'When status becomes ' + r.status_match : 'When the job status changes';
+  }
+  if (r.trigger_type === 'en_route') return 'When the technician is en route';
+  if (r.trigger_type === 'completed') return 'When a job is completed';
+  return 'When a job is created';
+}
+
+function ruleSummary(r) {
+  const tpl = templates.find((t) => t.id === r.template_id);
+  const msg = tpl ? tpl.name : 'template';
+  return whenLabel(r) + ' → send “' + msg + '” to ' + recipientLabel(r);
+}
+
+function statusMatchEnabled(trigger) {
+  return trigger === 'status_changed';
+}
+
+function selectedRecipientType() {
+  const el = document.querySelector('input[name="ruleRecipient"]:checked');
+  return el ? el.value : 'job_contact';
+}
+
+function syncRuleModalFields() {
+  const trigger = document.getElementById('ruleTrigger').value;
+  const statusWrap = document.getElementById('ruleStatusWrap');
+  const customWrap = document.getElementById('ruleCustomWrap');
+  if (statusWrap) statusWrap.style.display = statusMatchEnabled(trigger) ? 'block' : 'none';
+  if (customWrap) customWrap.style.display = selectedRecipientType() === 'custom' ? 'block' : 'none';
+  const tpl = templates.find((t) => t.id === Number(document.getElementById('ruleTemplate').value));
+  const preview = document.querySelector('#rulePreview span');
+  if (preview) preview.textContent = tpl ? renderPreview(tpl.body) : '';
+}
+
+function openRuleModal(id) {
+  editingRuleId = id == null ? null : id;
+  const rule = id == null ? null : rules.find((r) => r.id === id);
+  document.getElementById('ruleModalTitle').textContent = rule ? 'Edit automation' : 'Add automation';
+  document.getElementById('ruleName').value = rule ? rule.name : '';
+  const triggerEl = document.getElementById('ruleTrigger');
+  triggerEl.innerHTML = TRIGGERS.map((t) =>
+    '<option value="' + t.value + '"' + (rule && t.value === rule.trigger_type ? ' selected' : '') + '>' + t.label + '</option>'
+  ).join('');
+  document.getElementById('ruleStatus').value = rule ? (rule.status_match || '') : '';
+  document.getElementById('ruleTemplate').innerHTML = templateOptions(rule ? rule.template_id : (templates[0] && templates[0].id));
+  const type = rule && rule.recipient_type ? rule.recipient_type : 'job_contact';
+  document.querySelectorAll('input[name="ruleRecipient"]').forEach((el) => {
+    el.checked = el.value === type;
   });
-  row.querySelector('.rule-status').addEventListener('input', (e) => { rule.status_match = e.target.value; });
-  row.querySelector('.rule-template').addEventListener('change', (e) => { rule.template_id = Number(e.target.value); });
-  row.querySelector('.rule-enabled').addEventListener('change', (e) => { rule.enabled = e.target.checked; });
-  row.querySelector('.remove-rule').addEventListener('click', () => {
-    rules = rules.filter((r) => r.id !== id);
-    renderRules();
+  document.getElementById('ruleRecipientNumber').value = rule ? (rule.recipient_number || '') : '';
+  syncRuleModalFields();
+  const modal = document.getElementById('ruleModal');
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+  document.getElementById('ruleName').focus();
+}
+
+function closeRuleModal() {
+  document.getElementById('ruleModal').classList.remove('open');
+  document.getElementById('ruleModal').setAttribute('aria-hidden', 'true');
+  editingRuleId = null;
+}
+
+function applyRuleModal() {
+  const name = document.getElementById('ruleName').value.trim();
+  if (!name) { alert('Please enter a name.'); return false; }
+  const trigger_type = document.getElementById('ruleTrigger').value;
+  const recipient_type = selectedRecipientType();
+  const recipient_number = document.getElementById('ruleRecipientNumber').value.trim();
+  if (recipient_type === 'custom' && !recipient_number.replace(/\\s+/g, '')) {
+    alert('Enter a mobile number, or choose customer / company contact.');
+    return false;
+  }
+  const payload = {
+    name,
+    trigger_type,
+    status_match: statusMatchEnabled(trigger_type) ? document.getElementById('ruleStatus').value.trim() : '',
+    template_id: Number(document.getElementById('ruleTemplate').value) || (templates[0] && templates[0].id) || 1,
+    recipient_type,
+    recipient_number: recipient_type === 'custom' ? recipient_number : '',
+  };
+  if (editingRuleId == null) {
+    rules.push({ id: nextRuleId++, enabled: true, ...payload });
+  } else {
+    const rule = rules.find((r) => r.id === editingRuleId);
+    if (rule) Object.assign(rule, payload);
+  }
+  closeRuleModal();
+  renderRules();
+  return true;
+}
+
+function setupRuleModal() {
+  const modal = document.getElementById('ruleModal');
+  if (!modal) return;
+  on('ruleTrigger', 'change', syncRuleModalFields);
+  on('ruleTemplate', 'change', syncRuleModalFields);
+  modal.querySelectorAll('input[name="ruleRecipient"]').forEach((el) => {
+    el.addEventListener('change', syncRuleModalFields);
+  });
+  on('ruleModalCancel', 'click', closeRuleModal);
+  on('ruleModalSave', 'click', applyRuleModal);
+  modal.addEventListener('click', (e) => {
+    if (e.target.id === 'ruleModal') closeRuleModal();
   });
 }
 
 function renderRules() {
   const el = document.getElementById('ruleList');
+  if (!el) return;
   if (!rules.length) {
-    el.innerHTML = '<tr><td colspan="6" class="empty">No rules — click <strong>+ Add rule</strong></td></tr>';
+    el.innerHTML = '<div class="card empty">No automations — click <strong>+ Add automation</strong></div>';
     return;
   }
-  el.innerHTML = rules.map((r) => {
-    const statusOn = statusMatchEnabled(r.trigger_type);
-    return '<tr data-rule-id="' + r.id + '">' +
-      '<td><input type="text" class="rule-name" value="' + escHtml(r.name) + '" placeholder="e.g. New job" /></td>' +
-      '<td><select class="rule-trigger">' +
-      TRIGGERS.map((t) => '<option value="' + t.value + '"' + (t.value === r.trigger_type ? ' selected' : '') + '>' + t.label + '</option>').join('') +
-      '</select></td>' +
-      '<td><input type="text" class="rule-status" value="' + escHtml(r.status_match) + '" placeholder="Any status"' +
-      (statusOn ? '' : ' disabled style="opacity:0.45"') + ' /></td>' +
-      '<td><select class="rule-template">' + templateOptions(r.template_id) + '</select></td>' +
-      '<td><input type="checkbox" class="rule-enabled"' + (r.enabled ? ' checked' : '') + ' /></td>' +
-      '<td><button type="button" class="danger sm remove-rule">Remove</button></td></tr>';
-  }).join('');
-  el.querySelectorAll('tr[data-rule-id]').forEach(bindRuleRow);
+  el.innerHTML = rules.map((r) =>
+    '<div class="rule-card' + (r.enabled ? '' : ' off') + '" data-rule-id="' + r.id + '">' +
+    '<div class="rule-card-top">' +
+    '<strong>' + escHtml(r.name) + '</strong>' +
+    '<label class="rule-toggle"><input type="checkbox" class="rule-enabled"' + (r.enabled ? ' checked' : '') + ' /> On</label>' +
+    '</div>' +
+    '<p class="muted">' + escHtml(ruleSummary(r)) + '</p>' +
+    '<div class="row-actions">' +
+    '<button type="button" class="secondary sm edit-rule">Edit</button>' +
+    '<button type="button" class="danger sm remove-rule">Remove</button>' +
+    '</div></div>'
+  ).join('');
+  el.querySelectorAll('.rule-card').forEach((card) => {
+    const id = Number(card.dataset.ruleId);
+    const rule = rules.find((r) => r.id === id);
+    if (!rule) return;
+    card.querySelector('.rule-enabled').addEventListener('change', (e) => {
+      rule.enabled = e.target.checked;
+      card.classList.toggle('off', !rule.enabled);
+    });
+    card.querySelector('.edit-rule').addEventListener('click', () => openRuleModal(id));
+    card.querySelector('.remove-rule').addEventListener('click', () => {
+      rules = rules.filter((r) => r.id !== id);
+      renderRules();
+    });
+  });
 }
 
 function renderTemplates() {
@@ -818,6 +944,7 @@ function initDashboard() {
   try {
     setupTemplateModal();
     setupImportedTemplateModal();
+    setupRuleModal();
     renderTemplates();
     renderImportedTemplates();
     renderRules();
@@ -844,17 +971,7 @@ function initDashboard() {
     const localCard = document.getElementById('localTemplatesCard');
     if (localCard) localCard.style.display = 'none';
 
-    on('addRule', 'click', () => {
-      rules.push({
-        id: nextRuleId++,
-        name: 'New rule',
-        trigger_type: 'job_created',
-        status_match: '',
-        template_id: (templates[0] && templates[0].id) || 1,
-        enabled: true,
-      });
-      renderRules();
-    });
+    on('addRule', 'click', () => openRuleModal(null));
 
     on('saveTemplates', 'click', async () => {
       try {
@@ -891,10 +1008,17 @@ function initDashboard() {
           template_id: r.template_id,
           enabled: r.enabled ? 1 : 0,
           sort_order: i,
+          recipient_type: r.recipient_type || 'job_contact',
+          recipient_number: r.recipient_number || null,
         }));
         const res = parseInvoke(await invoke('sms_dashboard_save', { section: 'rules', rules: payload }));
         if (res && res.ok !== false) {
-          showToast('rulesToast', 'Rules saved');
+          if (Array.isArray(res.rules)) {
+            rules = res.rules;
+            nextRuleId = rules.reduce((m, t) => Math.max(m, t.id), 0) + 1;
+            renderRules();
+          }
+          showToast('rulesToast', 'Automations saved');
         } else {
           showToast('rulesToast', JSON.stringify(res), true);
         }
