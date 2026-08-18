@@ -2,10 +2,12 @@ import { getJob, getCompany, jobCompanyUuid, createJobNote, getVendorName } from
 import { getAccessToken } from "../servicem8/oauth.js";
 import {
   getTemplate,
+  hasRecentOutboundDuplicate,
   insertOutbound,
   listRules,
   logEvent,
 } from "../db/repository.js";
+import { automationCooldownMinutes, automationQuietHours, blockedByKeyword } from "../engine/automation-safety.js";
 import { buildJobTemplateContext } from "../engine/job-context.js";
 import { renderSmsBody } from "../engine/templates.js";
 import { evaluateRules, inferTrigger } from "../engine/rules.js";
@@ -55,6 +57,9 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
   if (!matched.length) return { sent: false, reason: "no_rule" };
 
   const vendorName = await getVendorName(token);
+  const blockedKeyword = blockedByKeyword(job, company);
+  const quiet = automationQuietHours();
+  const cooldownMinutes = automationCooldownMinutes();
   let sentAny = false;
   let lastFail: string | undefined;
 
@@ -74,6 +79,52 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
 
     const body = renderSmsBody(tpl.body, { ...ctx, status, mobile }, { job, vendorName });
     const idem = `${input.idempotency_key}:out:${rule.id}`;
+    if (blockedKeyword) {
+      insertOutbound({
+        account_uuid: input.account_uuid,
+        job_uuid: jobUuid,
+        to_number: mobile,
+        body,
+        status: "blocked_exclusion",
+        provider_response: `Blocked by exclusion keyword: ${blockedKeyword}`,
+        idempotency_key: idem,
+      });
+      lastFail = "blocked_exclusion";
+      continue;
+    }
+    if (quiet.blocked) {
+      insertOutbound({
+        account_uuid: input.account_uuid,
+        job_uuid: jobUuid,
+        to_number: mobile,
+        body,
+        status: "blocked_quiet_hours",
+        provider_response: `Blocked during quiet hours (${quiet.start}:00-${quiet.end}:00 Melbourne time)`,
+        idempotency_key: idem,
+      });
+      lastFail = "blocked_quiet_hours";
+      continue;
+    }
+    if (
+      hasRecentOutboundDuplicate({
+        job_uuid: jobUuid,
+        to_number: mobile,
+        body,
+        window_minutes: cooldownMinutes,
+      })
+    ) {
+      insertOutbound({
+        account_uuid: input.account_uuid,
+        job_uuid: jobUuid,
+        to_number: mobile,
+        body,
+        status: "blocked_duplicate",
+        provider_response: `Blocked duplicate within ${cooldownMinutes} minutes`,
+        idempotency_key: idem,
+      });
+      lastFail = "blocked_duplicate";
+      continue;
+    }
     const guarded = guardOutbound(mobile, body, jobUuid);
     if (!guarded.ok) {
       insertOutbound({
@@ -98,7 +149,7 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
       : result.accepted
         ? result.dryRun
           ? "dry_run"
-          : "sent"
+          : "submitted"
         : "failed";
     insertOutbound({
       account_uuid: input.account_uuid,

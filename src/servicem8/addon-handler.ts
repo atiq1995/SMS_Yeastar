@@ -119,6 +119,21 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
       const section = args.section as string;
       if (section === "settings" && typeof args.en_route_statuses === "string") {
         setSetting("en_route_statuses", args.en_route_statuses);
+        if (typeof args.automation_cooldown_minutes === "string") {
+          setSetting("automation_cooldown_minutes", args.automation_cooldown_minutes);
+        }
+        if (typeof args.quiet_hours_enabled === "string") {
+          setSetting("quiet_hours_enabled", args.quiet_hours_enabled);
+        }
+        if (typeof args.quiet_hours_start === "string") {
+          setSetting("quiet_hours_start", args.quiet_hours_start);
+        }
+        if (typeof args.quiet_hours_end === "string") {
+          setSetting("quiet_hours_end", args.quiet_hours_end);
+        }
+        if (typeof args.automation_exclusion_keywords === "string") {
+          setSetting("automation_exclusion_keywords", args.automation_exclusion_keywords);
+        }
         sendInvokeJson(res, { ok: true });
         return;
       }
@@ -260,7 +275,7 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
             : result.accepted
               ? result.dryRun
                 ? "dry_run"
-                : "sent"
+                : "submitted"
               : "failed";
           insertOutbound({
             account_uuid: acct,

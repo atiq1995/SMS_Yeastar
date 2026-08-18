@@ -4,6 +4,24 @@ function jobStr(job: Record<string, unknown>, ...keys: string[]): string {
   for (const k of keys) {
     const v = job[k];
     if (typeof v === "string" && v.trim()) return v.trim();
+    if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  }
+  return "";
+}
+
+function moneyStr(job: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = job[k];
+    if (typeof v === "number" && Number.isFinite(v)) {
+      return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(v);
+    }
+    if (typeof v === "string" && v.trim()) {
+      const n = Number(v.replace(/[^0-9.-]/g, ""));
+      if (Number.isFinite(n)) {
+        return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(n);
+      }
+      return v.trim();
+    }
   }
   return "";
 }
@@ -37,7 +55,7 @@ export function buildSm8Map(
     "job.mobile": ctx.mobile || jobStr(job, "mobile"),
     "job.phone_1": jobStr(job, "phone", "phone_1"),
     "job.site_name": jobStr(job, "site_name"),
-    "job.total_price": jobStr(job, "total_price", "total", "invoice_total"),
+    "job.total_price": moneyStr(job, "total_price", "total", "invoice_total", "total_amount", "invoice_total_inc_tax"),
     "service.name": description || category,
     "vendor.name": vendor,
     vendor,

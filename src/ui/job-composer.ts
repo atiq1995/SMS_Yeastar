@@ -30,6 +30,7 @@ export type JobComposerModel = {
   vendorName: string;
   jobDescription: string;
   jobCategory: string;
+  totalPrice: string;
   testMode: boolean;
   testModeLabel: string;
   error?: string;
@@ -55,6 +56,7 @@ export async function loadJobComposerModel(
     vendorName: "",
     jobDescription: "",
     jobCategory: "",
+    totalPrice: "",
     testMode: isTestMode(),
     testModeLabel: testModeLabel(),
     error,
@@ -84,6 +86,7 @@ export async function loadJobComposerModel(
     const enRoute = templates.find((t) => /en.?route/i.test(t.name));
     const jobDescription = typeof job.description === "string" ? job.description : "";
     const jobCategory = typeof job.category === "string" ? job.category : "";
+    const totalPrice = moneyText(job);
 
     return {
       accountUuid,
@@ -98,6 +101,7 @@ export async function loadJobComposerModel(
       vendorName: vendorName ?? "",
       jobDescription,
       jobCategory,
+      totalPrice,
       testMode: isTestMode(),
       testModeLabel: testModeLabel(),
       defaultTemplateId: enRoute?.id ?? templates[0]?.id ?? null,
@@ -120,6 +124,23 @@ function renderThread(messages: JobComposerModel["thread"]): string {
         `</div>`
     )
     .join("");
+}
+
+function moneyText(job: Record<string, unknown>): string {
+  for (const key of ["total_price", "total", "invoice_total", "total_amount", "invoice_total_inc_tax"]) {
+    const value = job[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(value);
+    }
+    if (typeof value === "string" && value.trim()) {
+      const num = Number(value.replace(/[^0-9.-]/g, ""));
+      if (Number.isFinite(num)) {
+        return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(num);
+      }
+      return value.trim();
+    }
+  }
+  return "";
 }
 
 function renderError(model: JobComposerModel): string {
@@ -165,6 +186,7 @@ export function renderJobComposerHtml(model: JobComposerModel): string {
     vendorName: model.vendorName,
     jobDescription: model.jobDescription,
     jobCategory: model.jobCategory,
+    totalPrice: model.totalPrice,
   });
   const defaultTpl = model.defaultTemplateId ?? "";
 
@@ -299,7 +321,7 @@ function renderPreview(text) {
     'job.company_name': customer,
     'job.description': desc,
     'job.category': CTX.jobCategory || '',
-    'job.total_price': '',
+    'job.total_price': CTX.totalPrice || '',
     'service.name': desc || CTX.jobCategory || '',
     'company.name': customer,
     'vendor.name': CTX.vendorName || '',

@@ -17,6 +17,23 @@ function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+function statusLabelText(s: string): string {
+  return (
+    {
+      submitted: "Submitted",
+      sent: "Submitted",
+      dry_run: "Dry run",
+      test_redirected: "Redirected",
+      test_redirected_dry_run: "Redirected (dry run)",
+      blocked_duplicate: "Blocked duplicate",
+      blocked_quiet_hours: "Blocked quiet hours",
+      blocked_exclusion: "Blocked exclusion",
+      blocked_test_mode: "Blocked test mode",
+      failed: "Failed",
+    }[s] || s
+  );
+}
+
 export async function renderDashboardHtml(accountUuid: string, auth?: { accessToken?: string }): Promise<string> {
   const templates = listTemplates();
   const rules = listRules();
@@ -25,6 +42,11 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
   const since = new Date(Date.now() - 7 * 864e5).toISOString();
   const sent7d = countOutboundSince(since);
   const enRoute = getSetting("en_route_statuses") ?? "En Route,Dispatched";
+  const automationCooldown = getSetting("automation_cooldown_minutes") ?? "15";
+  const quietHoursEnabled = (getSetting("quiet_hours_enabled") ?? "1") !== "0";
+  const quietHoursStart = getSetting("quiet_hours_start") ?? "20";
+  const quietHoursEnd = getSetting("quiet_hours_end") ?? "7";
+  const exclusionKeywords = getSetting("automation_exclusion_keywords") ?? "admin,internal,test";
   const token = await resolveAccessToken(accountUuid, auth);
   const importedTemplates = token ? await listSmsTemplates(token) : [];
 
@@ -135,7 +157,7 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
     <tbody id="logList">${outbound.map((m) => {
       const detail = String(m.provider_response ?? "").trim();
       const detailShort = detail ? (detail.length > 80 ? detail.slice(0, 80) + "…" : detail) : (m.status === "failed" ? "No error recorded" : "");
-      return `<tr><td>${esc(String(m.created_at))}</td><td>${esc(String(m.to_number))}</td><td>${esc(String(m.status))}</td><td class="muted" title="${esc(detail)}">${esc(detailShort)}</td><td>${esc(String(m.body).slice(0, 80))}</td></tr>`;
+      return `<tr><td>${esc(String(m.created_at))}</td><td>${esc(String(m.to_number))}</td><td>${esc(statusLabelText(String(m.status)))}</td><td class="muted" title="${esc(detail)}">${esc(detailShort)}</td><td>${esc(String(m.body).slice(0, 80))}</td></tr>`;
     }).join("") || '<tr><td colspan="5" class="empty">No outbound messages yet</td></tr>'}</tbody></table>
   </div>
 </div>
@@ -167,6 +189,22 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
   <div class="card">
     <label>En-route status labels (comma-separated)</label>
     <input id="enRouteStatuses" value="${esc(enRoute)}" />
+    <label>Duplicate send cooldown (minutes)</label>
+    <input id="automationCooldownMinutes" value="${esc(automationCooldown)}" />
+    <label><input type="checkbox" id="quietHoursEnabled"${quietHoursEnabled ? " checked" : ""} style="width:auto;margin-right:8px" /> Block automation during quiet hours</label>
+    <div class="row-actions" style="align-items:flex-end;margin:8px 0 12px">
+      <div style="flex:1">
+        <label>Quiet hours start (0-23, Melbourne time)</label>
+        <input id="quietHoursStart" value="${esc(quietHoursStart)}" />
+      </div>
+      <div style="flex:1">
+        <label>Quiet hours end (0-23, Melbourne time)</label>
+        <input id="quietHoursEnd" value="${esc(quietHoursEnd)}" />
+      </div>
+    </div>
+    <label>Automation exclusion keywords (comma-separated)</label>
+    <input id="automationExclusionKeywords" value="${esc(exclusionKeywords)}" />
+    <p class="hint">If any of these keywords appear in the customer, site, category, description, or address, automation will not text the customer.</p>
     <div class="actions" style="margin-top:0;padding-top:0;border-top:none">
       <button type="button" id="saveSettings">Save settings</button>
       <button type="button" class="secondary" id="testYeastar">Test Yeastar</button>
@@ -320,6 +358,22 @@ function logDetailText(m) {
   return s.length > 80 ? s.slice(0, 80) + '…' : s;
 }
 
+function statusLabel(s) {
+  var map = {
+    submitted: 'Submitted',
+    sent: 'Submitted',
+    dry_run: 'Dry run',
+    test_redirected: 'Redirected',
+    test_redirected_dry_run: 'Redirected (dry run)',
+    blocked_duplicate: 'Blocked duplicate',
+    blocked_quiet_hours: 'Blocked quiet hours',
+    blocked_exclusion: 'Blocked exclusion',
+    blocked_test_mode: 'Blocked test mode',
+    failed: 'Failed'
+  };
+  return map[s] || s;
+}
+
 function renderPreview(body) {
   return body.replace(/\\{\\{(\\w+)\\}\\}/g, (_, k) => SAMPLE[k] ?? '{{' + k + '}}');
 }
@@ -444,7 +498,7 @@ function renderLog(rows) {
     return;
   }
   el.innerHTML = rows.map((m) =>
-    '<tr><td>' + escHtml(m.created_at) + '</td><td>' + escHtml(m.to_number) + '</td><td>' + escHtml(m.status) +
+    '<tr><td>' + escHtml(m.created_at) + '</td><td>' + escHtml(m.to_number) + '</td><td>' + escHtml(statusLabel(m.status)) +
     '</td><td class="muted" title="' + escHtml(String(m.provider_response || '')) + '">' + escHtml(logDetailText(m)) +
     '</td><td>' + escHtml(String(m.body).slice(0, 80)) + '</td></tr>'
   ).join('');
@@ -1032,6 +1086,11 @@ function initDashboard() {
         const res = parseInvoke(await invoke('sms_dashboard_save', {
           section: 'settings',
           en_route_statuses: document.getElementById('enRouteStatuses').value,
+          automation_cooldown_minutes: document.getElementById('automationCooldownMinutes').value,
+          quiet_hours_enabled: document.getElementById('quietHoursEnabled').checked ? '1' : '0',
+          quiet_hours_start: document.getElementById('quietHoursStart').value,
+          quiet_hours_end: document.getElementById('quietHoursEnd').value,
+          automation_exclusion_keywords: document.getElementById('automationExclusionKeywords').value,
         }));
         document.getElementById('settingsOut').textContent = JSON.stringify(res);
       } catch (e) {

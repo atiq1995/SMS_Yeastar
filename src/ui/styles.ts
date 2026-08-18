@@ -375,8 +375,9 @@ export const SHARED_STYLES = `
 `;
 
 export const COMPOSER_STYLES = `
-  body { padding: 0; background: #fff; }
-  .composer { max-width: 100%; }
+  html, body { height: 100%; }
+  body { padding: 0; background: #fff; overflow: hidden; }
+  .composer { max-width: 100%; height: 100vh; display: flex; flex-direction: column; }
   .composer-header {
     display: flex;
     align-items: center;
@@ -418,7 +419,7 @@ export const COMPOSER_STYLES = `
   .job-context > div { margin: 0; }
   .job-context dt { color: #6b7280; margin: 0; font-weight: 500; }
   .job-context dd { margin: 2px 0 0; color: #111827; font-weight: 600; }
-  .composer-body { padding: 16px; }
+  .composer-body { padding: 16px; flex: 1; overflow-y: auto; min-height: 0; }
   .composer-body label { margin-top: 0; }
   .composer-body textarea { margin-bottom: 4px; }
   .char-row {
@@ -482,6 +483,7 @@ export const COMPOSER_STYLES = `
     padding: 12px 16px;
     border-top: 1px solid #e5e7eb;
     background: #fafafa;
+    flex-shrink: 0;
   }
   .composer-footer button { margin-bottom: 0; }
   .composer-error {

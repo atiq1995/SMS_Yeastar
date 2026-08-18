@@ -139,6 +139,33 @@ export function insertOutbound(row: {
   return Number(r.lastInsertRowid);
 }
 
+export function hasRecentOutboundDuplicate(input: {
+  job_uuid?: string;
+  to_number: string;
+  body: string;
+  window_minutes: number;
+}): boolean {
+  const row = db()
+    .prepare(
+      `SELECT 1
+       FROM outbound_messages
+       WHERE job_uuid IS ?
+         AND to_number = ?
+         AND body = ?
+         AND created_at >= datetime('now', ?)
+         AND status IN ('sent', 'dry_run', 'test_redirected', 'test_redirected_dry_run', 'submitted')
+       ORDER BY id DESC
+       LIMIT 1`
+    )
+    .get(
+      input.job_uuid ?? null,
+      input.to_number,
+      input.body,
+      `-${Math.max(1, input.window_minutes)} minutes`
+    ) as { 1: number } | undefined;
+  return !!row;
+}
+
 export function listInbound(limit = 100): Record<string, unknown>[] {
   const rows = db().prepare("SELECT * FROM inbound_messages ORDER BY id DESC LIMIT ?").all(limit) as Record<
     string,
@@ -211,6 +238,39 @@ export function getSingleOAuthTokens(): { account_uuid: string; access_token: st
 export function countOutboundSince(sinceIso: string): number {
   const row = db().prepare("SELECT COUNT(*) AS c FROM outbound_messages WHERE created_at >= ?").get(sinceIso) as { c: number };
   return row.c;
+}
+
+export function refreshDefaultTemplates(database?: Database.Database): number {
+  const d = database ?? db();
+  const pairs = [
+    {
+      name: "job_created",
+      oldBody: "Hi {{customerName}}, we received your job {{jobNumber}}. We will be in touch soon. — Tom's Pest Control",
+      newBody: "Hi {{customerName}}, thanks for contacting Tom's Pest Control. We've received job {{jobNumber}} and will be in touch shortly.",
+    },
+    {
+      name: "status_update",
+      oldBody: "Hi {{customerName}}, job {{jobNumber}} is now: {{status}}. — Tom's Pest Control",
+      newBody: "Hi {{customerName}}, there has been an update to job {{jobNumber}}. If you need anything, just reply to this message.",
+    },
+    {
+      name: "en_route",
+      oldBody: "Hi {{customerName}}, our technician is on the way to {{address}} for job {{jobNumber}}.",
+      newBody: "Hi {{customerName}}, our technician is on the way for job {{jobNumber}} and is heading to {{address}}.",
+    },
+    {
+      name: "completed",
+      oldBody: "Hi {{customerName}}, job {{jobNumber}} is complete. Thank you for choosing Tom's Pest Control.",
+      newBody: "Hi {{customerName}}, your Tom's Pest Control job {{jobNumber}} has been completed. Thank you for choosing us.",
+    },
+  ];
+  const upd = d.prepare("UPDATE templates SET body = ?, updated_at = datetime('now') WHERE name = ? AND body = ?");
+  let changed = 0;
+  for (const pair of pairs) {
+    const res = upd.run(pair.newBody, pair.name, pair.oldBody);
+    changed += res.changes;
+  }
+  return changed;
 }
 
 export function seedDefaults(database?: Database.Database): void {

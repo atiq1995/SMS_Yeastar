@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { env } from "../config/env.js";
-import { seedDefaults } from "./repository.js";
+import { refreshDefaultTemplates, seedDefaults } from "./repository.js";
 import { repairInboundMessages } from "../yeastar/repair-inbound.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -24,7 +24,9 @@ db.exec(schema);
 addColumn(db, "ALTER TABLE rules ADD COLUMN recipient_type TEXT NOT NULL DEFAULT 'job_contact'");
 addColumn(db, "ALTER TABLE rules ADD COLUMN recipient_number TEXT");
 seedDefaults(db);
+const refreshedTemplates = refreshDefaultTemplates(db);
 const repaired = repairInboundMessages(db);
 db.close();
 console.log("migrate ok:", env.databasePath);
+console.log("default template refresh:", refreshedTemplates);
 console.log("inbound repair:", repaired);
