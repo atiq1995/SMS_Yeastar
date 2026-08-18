@@ -1,7 +1,7 @@
 import type { RuleRow } from "../db/repository.js";
 import {
-  resolveCompanyPrimaryMobile,
-  resolveJobMobile,
+  resolveCompanyPrimaryRecipient,
+  resolveJobRecipient,
   type ServiceM8Company,
   type ServiceM8Job,
 } from "../servicem8/api.js";
@@ -17,9 +17,12 @@ export async function resolveRuleRecipient(
   accessToken: string,
   job: ServiceM8Job,
   company: ServiceM8Company
-): Promise<string | undefined> {
+): Promise<{ mobile: string; name?: string } | undefined> {
   const type = rule.recipient_type || "job_contact";
-  if (type === "custom") return customRecipientNumber(rule.recipient_number);
-  if (type === "company_primary") return resolveCompanyPrimaryMobile(accessToken, job, company);
-  return resolveJobMobile(accessToken, job, company);
+  if (type === "custom") {
+    const mobile = customRecipientNumber(rule.recipient_number);
+    return mobile ? { mobile } : undefined;
+  }
+  if (type === "company_primary") return resolveCompanyPrimaryRecipient(accessToken, job, company);
+  return resolveJobRecipient(accessToken, job, company);
 }

@@ -37,6 +37,12 @@ export function buildSm8Map(
   const address = ctx.address || jobStr(job, "job_address", "address");
   const description = jobStr(job, "description");
   const category = jobStr(job, "category");
+  const currentUserFirst = ctx.currentUserFirst || "";
+  const assignedStaffFirst = ctx.assignedStaffFirst || "";
+  const serviceDescription =
+    ctx.serviceDescription || jobStr(job, "service_description", "service_name", "service") || description || category;
+  const serviceWarrantyPeriod =
+    ctx.serviceWarrantyPeriod || jobStr(job, "service_warranty_period", "warranty_period", "warranty");
   // ponytail: only strings — objects become [object Object] in SMS
   const vendor = typeof vendorName === "string" ? vendorName.trim() : typeof ctx.vendorName === "string" ? ctx.vendorName.trim() : "";
   return {
@@ -51,18 +57,30 @@ export function buildSm8Map(
     "job.company_name": jobStr(job, "company_name") || customer,
     "job.description": description,
     "job.category": category,
+    "job.booked_by_name": jobStr(job, "booked_by_name"),
     "job.email": jobStr(job, "email"),
     "job.mobile": ctx.mobile || jobStr(job, "mobile"),
     "job.phone_1": jobStr(job, "phone", "phone_1"),
     "job.site_name": jobStr(job, "site_name"),
-    "job.total_price": moneyStr(job, "total_price", "total", "invoice_total", "total_amount", "invoice_total_inc_tax"),
+    "job.total_price": moneyStr(job, "total_price", "total", "invoice_total", "total_amount", "invoice_total_inc_tax", "total_invoice_amount"),
+    "job.next_booking_date": ctx.nextBookingDate || jobStr(job, "next_booking_date"),
+    "job.next_booking_date_extended": ctx.nextBookingDateExtended || jobStr(job, "next_booking_date_extended"),
+    "job.next_booking_time": ctx.nextBookingTime || jobStr(job, "next_booking_time"),
+    "job.service_warranty_period": serviceWarrantyPeriod,
     "service.name": description || category,
+    "service.service_description": serviceDescription,
     "vendor.name": vendor,
     vendor,
     "company.name": ctx.companyName || customer,
+    "staff.first": assignedStaffFirst || currentUserFirst,
+    "calculation.current_user_first": currentUserFirst,
+    "calculation.current_user_mobile": ctx.currentUserMobile || "",
+    "calculation.current_user_customfield_job_title": ctx.currentUserJobTitle || "",
+    "calculation.current_user_customfield_licence_number": ctx.currentUserLicenceNumber || "",
     // ponytail: Yeastar can't mint ServiceM8 portal links — leave a clear marker
     document: "[invoice link]",
-    "location.phone_1": jobStr(job, "phone", "phone_1") || (typeof ctx.mobile === "string" ? ctx.mobile : ""),
+    and_will_be_arriving_in_approximately_x_minutes: "and will be arriving shortly",
+    "location.phone_1": ctx.vendorPhone1 || jobStr(job, "phone", "phone_1") || (typeof ctx.mobile === "string" ? ctx.mobile : ""),
   };
 }
 

@@ -17,10 +17,11 @@ import {
 import { sendSms } from "../yeastar/send.js";
 import { env } from "../config/env.js";
 import { processJobEvent } from "../workers/process-event.js";
-import { getJob, getCompany, jobCompanyUuid, createJobNote, createSmsTemplate, listSmsTemplates, getVendorName } from "./api.js";
+import { getJob, getCompany, getLocationPhone1, getNextBookingContext, getStaff, jobCompanyUuid, createJobNote, createSmsTemplate, listSmsTemplates, getVendorName } from "./api.js";
 import { resolveAccessToken } from "./oauth.js";
 import { renderSmsBody } from "../engine/templates.js";
-import { buildJobTemplateContext } from "../engine/job-context.js";
+import { buildJobTemplateContext, buildSm8Map } from "../engine/job-context.js";
+import { analyzeTemplateFields } from "../engine/field-support.js";
 import { enqueueSend } from "../yeastar/queue.js";
 import { guardOutbound } from "../yeastar/guard.js";
 import { yeastarResultDetail } from "../yeastar/result.js";
@@ -246,8 +247,55 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
         return;
       }
       const company = await getCompany(token, cu);
+      const booking = await getNextBookingContext(token, j);
       const vendorName = await getVendorName(token);
+      const vendorPhone1 = await getLocationPhone1(token, j).catch(() => undefined);
       const ctx = buildJobTemplateContext(j, company, toNumber, recipientName);
+      ctx.nextBookingDate = booking.nextBookingDate;
+      ctx.nextBookingDateExtended = booking.nextBookingDateExtended;
+      ctx.nextBookingTime = booking.nextBookingTime;
+      ctx.serviceWarrantyPeriod =
+        (typeof j.service_warranty_period === "string" && j.service_warranty_period.trim()) ||
+        (typeof company.service_warranty_period === "string" && company.service_warranty_period.trim()) ||
+        (typeof j.warranty_period === "string" && j.warranty_period.trim()) ||
+        (typeof company.warranty_period === "string" && company.warranty_period.trim()) ||
+        undefined;
+      const currentStaffUuid = typeof payload.auth?.staffUUID === "string" ? payload.auth.staffUUID.trim() : "";
+      if (currentStaffUuid) {
+        const currentStaff: Record<string, unknown> = await getStaff(token, currentStaffUuid).catch(
+          () => ({} as Record<string, unknown>)
+        );
+        ctx.currentUserFirst =
+          (typeof currentStaff.first === "string" && currentStaff.first.trim()) ||
+          (typeof currentStaff.full_name === "string" && currentStaff.full_name.trim().split(/\s+/)[0]) ||
+          (typeof currentStaff.name === "string" && currentStaff.name.trim().split(/\s+/)[0]) ||
+          undefined;
+        ctx.currentUserMobile = typeof currentStaff.mobile === "string" ? currentStaff.mobile.trim() : undefined;
+        ctx.currentUserJobTitle =
+          (typeof currentStaff.customfield_job_title === "string" && currentStaff.customfield_job_title.trim()) ||
+          (typeof currentStaff.job_title === "string" && currentStaff.job_title.trim()) ||
+          (typeof currentStaff.position === "string" && currentStaff.position.trim()) ||
+          undefined;
+        ctx.currentUserLicenceNumber =
+          (typeof currentStaff.customfield_licence_number === "string" && currentStaff.customfield_licence_number.trim()) ||
+          (typeof currentStaff.licence_number === "string" && currentStaff.licence_number.trim()) ||
+          (typeof currentStaff.license_number === "string" && currentStaff.license_number.trim()) ||
+          undefined;
+      }
+      if (vendorPhone1) ctx.vendorPhone1 = vendorPhone1;
+      const mergeFields = buildSm8Map(j, ctx, vendorName);
+      const issues = analyzeTemplateFields(message, mergeFields);
+      if (issues.unsupported.length || issues.missingExact.length) {
+        sendInvokeJson(res, {
+          error: issues.unsupported.length
+            ? `unsupported_fields: ${issues.unsupported.join(", ")}`
+            : `missing_fields: ${issues.missingExact.join(", ")}`,
+          hint: issues.unsupported.length
+            ? "Replace the unsupported template field before sending."
+            : "ServiceM8 did not provide all required data for this template.",
+        });
+        return;
+      }
       if (vendorName) ctx.vendorName = vendorName;
       const text = renderSmsBody(message, ctx, { job: j, vendorName });
       const guarded = guardOutbound(toNumber, text, jobId);

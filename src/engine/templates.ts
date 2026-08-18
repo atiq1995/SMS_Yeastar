@@ -9,6 +9,17 @@ export type TemplateContext = {
   companyName?: string;
   mobile?: string;
   vendorName?: string;
+  vendorPhone1?: string;
+  currentUserFirst?: string;
+  currentUserMobile?: string;
+  currentUserJobTitle?: string;
+  currentUserLicenceNumber?: string;
+  assignedStaffFirst?: string;
+  nextBookingDate?: string;
+  nextBookingDateExtended?: string;
+  nextBookingTime?: string;
+  serviceWarrantyPeriod?: string;
+  serviceDescription?: string;
   [key: string]: string | undefined;
 };
 
@@ -43,8 +54,8 @@ function sm8Value(map: Record<string, string>, key: string): string {
 /** Only real ServiceM8 merge fields — never eat random `{ss}` inside words */
 export function isSm8FieldTag(key: string): boolean {
   const k = key.toLowerCase();
-  if (k === "document" || k === "vendor") return true;
-  return /^(job|vendor|company|service|location|staff|asset|form)\.[a-z0-9_.]+$/.test(k);
+  if (k === "document" || k === "vendor" || k === "and_will_be_arriving_in_approximately_x_minutes") return true;
+  return /^(job|vendor|company|service|location|staff|asset|form|calculation)\.[a-z0-9_.]+$/.test(k);
 }
 
 /** ServiceM8 `{job.xxx}` tokens + our `{{var}}` Handlebars syntax */

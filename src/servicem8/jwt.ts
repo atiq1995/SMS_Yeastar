@@ -11,7 +11,11 @@ export type AddonJwt = jwt.JwtPayload & {
   object?: string;
   entry?: Record<string, unknown>;
   args?: Record<string, unknown>;
-  auth?: { accessToken?: string };
+  auth?: {
+    accessToken?: string;
+    staffUUID?: string;
+    accountUUID?: string;
+  };
 };
 
 export function verifyServiceM8Jwt(rawBody: Buffer | string): AddonJwt {

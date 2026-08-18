@@ -1,4 +1,4 @@
-import { getJob, getCompany, jobCompanyUuid, createJobNote, getVendorName } from "../servicem8/api.js";
+import { getJob, getCompany, getLocationPhone1, getNextBookingContext, getStaff, jobCompanyUuid, createJobNote, getVendorName } from "../servicem8/api.js";
 import { getAccessToken } from "../servicem8/oauth.js";
 import {
   getTemplate,
@@ -8,6 +8,8 @@ import {
   logEvent,
 } from "../db/repository.js";
 import { automationCooldownMinutes, automationQuietHours, blockedByKeyword } from "../engine/automation-safety.js";
+import { analyzeTemplateFields } from "../engine/field-support.js";
+import { buildSm8Map } from "../engine/job-context.js";
 import { buildJobTemplateContext } from "../engine/job-context.js";
 import { renderSmsBody } from "../engine/templates.js";
 import { evaluateRules, inferTrigger } from "../engine/rules.js";
@@ -48,7 +50,33 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
   const companyUuid = jobCompanyUuid(job);
   if (!companyUuid) return { sent: false, reason: "no_company" };
   const company = await getCompany(token, companyUuid);
+  const booking = await getNextBookingContext(token, job);
+  const vendorPhone1 = await getLocationPhone1(token, job).catch(() => undefined);
+  const assignedStaffUuid =
+    booking.assignedStaffUuid ||
+    (typeof job.staff_uuid === "string" && job.staff_uuid.trim()) ||
+    (typeof job.queue_assigned_staff_uuid === "string" && job.queue_assigned_staff_uuid.trim()) ||
+    (typeof job.assigned_staff_uuid === "string" && job.assigned_staff_uuid.trim()) ||
+    "";
+  const assignedStaff: Record<string, unknown> = assignedStaffUuid
+    ? await getStaff(token, assignedStaffUuid).catch(() => ({} as Record<string, unknown>))
+    : {};
   const ctx = buildJobTemplateContext(job, company);
+  ctx.nextBookingDate = booking.nextBookingDate;
+  ctx.nextBookingDateExtended = booking.nextBookingDateExtended;
+  ctx.nextBookingTime = booking.nextBookingTime;
+  ctx.serviceWarrantyPeriod =
+    (typeof job.service_warranty_period === "string" && job.service_warranty_period.trim()) ||
+    (typeof company.service_warranty_period === "string" && company.service_warranty_period.trim()) ||
+    (typeof job.warranty_period === "string" && job.warranty_period.trim()) ||
+    (typeof company.warranty_period === "string" && company.warranty_period.trim()) ||
+    undefined;
+  ctx.assignedStaffFirst =
+    (typeof assignedStaff.first === "string" && assignedStaff.first.trim()) ||
+    (typeof assignedStaff.full_name === "string" && assignedStaff.full_name.trim().split(/\s+/)[0]) ||
+    (typeof assignedStaff.name === "string" && assignedStaff.name.trim().split(/\s+/)[0]) ||
+    undefined;
+  ctx.vendorPhone1 = vendorPhone1;
   const status = input.status ?? ctx.status;
   const trigger = inferTrigger(input.event_type, status, input.changed_fields);
   if (!trigger) return { sent: false, reason: "no_trigger" };
@@ -70,14 +98,40 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
       lastFail = "no_template";
       continue;
     }
-    const mobile = await resolveRuleRecipient(rule, token, job, company);
-    if (!mobile) {
+    const recipient = await resolveRuleRecipient(rule, token, job, company);
+    if (!recipient?.mobile) {
       console.warn("automation skip", rule.id, "no_mobile");
       lastFail = "no_mobile";
       continue;
     }
+    const mobile = recipient.mobile;
+    const recipientCtx = {
+      ...ctx,
+      customerName: recipient.name || ctx.customerName,
+      status,
+      mobile,
+    };
+    const issues = analyzeTemplateFields(tpl.body, buildSm8Map(job, recipientCtx, vendorName));
+    if (issues.unsupported.length || issues.missingExact.length) {
+      insertOutbound({
+        account_uuid: input.account_uuid,
+        job_uuid: jobUuid,
+        to_number: mobile,
+        body: tpl.body,
+        status: "blocked_template_fields",
+        provider_response: [
+          issues.unsupported.length ? `Unsupported fields: ${issues.unsupported.join(", ")}` : "",
+          issues.missingExact.length ? `Missing exact fields: ${issues.missingExact.join(", ")}` : "",
+        ]
+          .filter(Boolean)
+          .join(" | "),
+        idempotency_key: `${input.idempotency_key}:out:${rule.id}`,
+      });
+      lastFail = "blocked_template_fields";
+      continue;
+    }
 
-    const body = renderSmsBody(tpl.body, { ...ctx, status, mobile }, { job, vendorName });
+    const body = renderSmsBody(tpl.body, recipientCtx, { job, vendorName });
     const idem = `${input.idempotency_key}:out:${rule.id}`;
     if (blockedKeyword) {
       insertOutbound({

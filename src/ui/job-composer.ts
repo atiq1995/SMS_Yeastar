@@ -1,6 +1,17 @@
 import { SHARED_STYLES, COMPOSER_STYLES } from "./styles.js";
+import { LIVE_FIELD_SUPPORT } from "../engine/field-support.js";
 import { listJobThread } from "../db/repository.js";
-import { getJob, getCompany, jobCompanyUuid, listJobRecipients, listSmsTemplates, getVendorName } from "../servicem8/api.js";
+import {
+  getJob,
+  getCompany,
+  getLocationPhone1,
+  getNextBookingContext,
+  getStaff,
+  jobCompanyUuid,
+  listJobRecipients,
+  listSmsTemplates,
+  getVendorName,
+} from "../servicem8/api.js";
 import { resolveAccessToken } from "../servicem8/oauth.js";
 import { buildJobTemplateContext } from "../engine/job-context.js";
 import { isTestMode, testModeLabel } from "../yeastar/guard.js";
@@ -31,6 +42,7 @@ export type JobComposerModel = {
   jobDescription: string;
   jobCategory: string;
   totalPrice: string;
+  mergeFields: Record<string, string>;
   testMode: boolean;
   testModeLabel: string;
   error?: string;
@@ -40,7 +52,7 @@ export type JobComposerModel = {
 export async function loadJobComposerModel(
   accountUuid: string,
   jobUuid: string,
-  auth?: { accessToken?: string }
+  auth?: { accessToken?: string; staffUUID?: string }
 ): Promise<JobComposerModel> {
   const empty = (error: string, hint?: string): JobComposerModel => ({
     accountUuid,
@@ -57,6 +69,7 @@ export async function loadJobComposerModel(
     jobDescription: "",
     jobCategory: "",
     totalPrice: "",
+    mergeFields: {},
     testMode: isTestMode(),
     testModeLabel: testModeLabel(),
     error,
@@ -76,24 +89,53 @@ export async function loadJobComposerModel(
     if (!companyUuid) return empty("Job has no linked customer");
 
     const company = await getCompany(token, companyUuid);
+    const booking = await getNextBookingContext(token, job);
     const ctx = buildJobTemplateContext(job, company);
     const recipients = await listJobRecipients(token, job, company);
-    const [templates, thread, vendorName] = await Promise.all([
+    const initialRecipientName = recipients[0]?.name || ctx.customerName || "Customer";
+    const currentStaffUuid = typeof auth?.staffUUID === "string" && auth.staffUUID.trim() ? auth.staffUUID : "";
+    const assignedStaffUuid =
+      booking.assignedStaffUuid ||
+      (typeof job.staff_uuid === "string" && job.staff_uuid.trim() && job.staff_uuid) ||
+      (typeof job.queue_assigned_staff_uuid === "string" && job.queue_assigned_staff_uuid.trim() && job.queue_assigned_staff_uuid) ||
+      (typeof job.assigned_staff_uuid === "string" && job.assigned_staff_uuid.trim() && job.assigned_staff_uuid) ||
+      "";
+    const [templates, thread, vendorName, vendorPhone1, currentStaff, assignedStaff] = await Promise.all([
       listSmsTemplates(token),
       Promise.resolve(listJobThread(jobUuid)),
       getVendorName(token),
+      getLocationPhone1(token, job).catch(() => undefined),
+      currentStaffUuid ? getStaff(token, currentStaffUuid).catch(() => ({})) : Promise.resolve({}),
+      assignedStaffUuid ? getStaff(token, assignedStaffUuid).catch(() => ({})) : Promise.resolve({}),
     ]);
     const enRoute = templates.find((t) => /en.?route/i.test(t.name));
     const jobDescription = typeof job.description === "string" ? job.description : "";
     const jobCategory = typeof job.category === "string" ? job.category : "";
     const totalPrice = moneyText(job);
+    const mergeFields = buildComposerMergeFields({
+      job,
+      company,
+      vendorName: vendorName ?? "",
+      vendorPhone1: vendorPhone1 ?? "",
+      customerName: initialRecipientName,
+      companyName: ctx.companyName ?? ctx.customerName ?? "Customer",
+      address: ctx.address ?? "",
+      status: ctx.status ?? "",
+      jobNumber: ctx.jobNumber ?? "",
+      totalPrice,
+      nextBookingDate: booking.nextBookingDate,
+      nextBookingDateExtended: booking.nextBookingDateExtended,
+      nextBookingTime: booking.nextBookingTime,
+      currentStaff,
+      assignedStaff,
+    });
 
     return {
       accountUuid,
       jobUuid,
       jobNumber: ctx.jobNumber ?? "",
       status: ctx.status ?? "",
-      customerName: ctx.customerName ?? "Customer",
+      customerName: initialRecipientName,
       address: ctx.address ?? "—",
       recipients,
       templates,
@@ -102,6 +144,7 @@ export async function loadJobComposerModel(
       jobDescription,
       jobCategory,
       totalPrice,
+      mergeFields,
       testMode: isTestMode(),
       testModeLabel: testModeLabel(),
       defaultTemplateId: enRoute?.id ?? templates[0]?.id ?? null,
@@ -127,7 +170,7 @@ function renderThread(messages: JobComposerModel["thread"]): string {
 }
 
 function moneyText(job: Record<string, unknown>): string {
-  for (const key of ["total_price", "total", "invoice_total", "total_amount", "invoice_total_inc_tax"]) {
+  for (const key of ["total_price", "total", "invoice_total", "total_amount", "invoice_total_inc_tax", "total_invoice_amount"]) {
     const value = job[key];
     if (typeof value === "number" && Number.isFinite(value)) {
       return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(value);
@@ -141,6 +184,101 @@ function moneyText(job: Record<string, unknown>): string {
     }
   }
   return "";
+}
+
+function firstWord(value: unknown): string {
+  return typeof value === "string" && value.trim() ? value.trim().split(/\s+/)[0] ?? "" : "";
+}
+
+function text(obj: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return "";
+}
+
+function buildComposerMergeFields(args: {
+  job: Record<string, unknown>;
+  company: Record<string, unknown>;
+  vendorName: string;
+  vendorPhone1: string;
+  customerName: string;
+  companyName: string;
+  address: string;
+  status: string;
+  jobNumber: string;
+  totalPrice: string;
+  nextBookingDate?: string;
+  nextBookingDateExtended?: string;
+  nextBookingTime?: string;
+  currentStaff: Record<string, unknown>;
+  assignedStaff: Record<string, unknown>;
+}): Record<string, string> {
+  const {
+    job,
+    company,
+    vendorName,
+    vendorPhone1,
+    customerName,
+    companyName,
+    address,
+    status,
+    jobNumber,
+    totalPrice,
+    nextBookingDate,
+    nextBookingDateExtended,
+    nextBookingTime,
+    currentStaff,
+    assignedStaff,
+  } = args;
+  const description = text(job, "description");
+  const category = text(job, "category");
+  const currentUserFirst = firstWord(currentStaff.first) || firstWord(currentStaff.full_name) || firstWord(currentStaff.name);
+  const assignedStaffFirst = firstWord(assignedStaff.first) || firstWord(assignedStaff.full_name) || firstWord(assignedStaff.name);
+  const serviceDescription =
+    text(job, "service_description", "service_name", "service") || description || category;
+  const serviceWarrantyPeriod =
+    text(job, "service_warranty_period", "warranty_period", "warranty") ||
+    text(company, "service_warranty_period", "warranty_period", "warranty");
+  return {
+    "job.generated_job_id": jobNumber,
+    "job.status": status || text(job, "status"),
+    "job.job_address": address,
+    "job.address": address,
+    "job.job_address_singleline": address.replace(/\n/g, ", "),
+    "job.contact_first": text(job, "contact_first") || firstWord(customerName) || customerName,
+    "job.contact_last": text(job, "contact_last") || customerName.trim().split(/\s+/).slice(1).join(" "),
+    "job.contact_name": text(job, "contact_name") || customerName,
+    "job.company_name": text(job, "company_name") || companyName,
+    "job.description": description,
+    "job.category": category,
+    "job.total_price": totalPrice,
+    "job.booked_by_name": text(job, "booked_by_name"),
+    "job.next_booking_date": nextBookingDate || text(job, "next_booking_date"),
+    "job.next_booking_date_extended": nextBookingDateExtended || text(job, "next_booking_date_extended"),
+    "job.next_booking_time": nextBookingTime || text(job, "next_booking_time"),
+    "job.service_warranty_period": serviceWarrantyPeriod,
+    "service.name": description || category,
+    "service.service_description": serviceDescription,
+    "company.name": text(company, "name", "company_name") || companyName,
+    "vendor.name": vendorName,
+    vendor: vendorName,
+    document: "[invoice link]",
+    "staff.first": assignedStaffFirst || currentUserFirst,
+    "location.phone_1": vendorPhone1 || text(job, "phone", "phone_1"),
+    "calculation.current_user_first": currentUserFirst,
+    "calculation.current_user_mobile": text(currentStaff, "mobile"),
+    "calculation.current_user_customfield_job_title": text(currentStaff, "customfield_job_title", "job_title", "position"),
+    "calculation.current_user_customfield_licence_number": text(
+      currentStaff,
+      "customfield_licence_number",
+      "licence_number",
+      "license_number"
+    ),
+    and_will_be_arriving_in_approximately_x_minutes: "and will be arriving shortly",
+  };
 }
 
 function renderError(model: JobComposerModel): string {
@@ -187,7 +325,9 @@ export function renderJobComposerHtml(model: JobComposerModel): string {
     jobDescription: model.jobDescription,
     jobCategory: model.jobCategory,
     totalPrice: model.totalPrice,
+    mergeFields: model.mergeFields,
   });
+  const fieldSupportJson = JSON.stringify(LIVE_FIELD_SUPPORT);
   const defaultTpl = model.defaultTemplateId ?? "";
 
   const recipientOptions = model.recipients.length
@@ -239,6 +379,7 @@ export function renderJobComposerHtml(model: JobComposerModel): string {
     </div>
 
     <div class="preview-bubble"><strong>Preview</strong><span id="preview"></span></div>
+    <div id="fieldWarnings" class="field-warnings" hidden></div>
 
     <div class="thread">
       <h3>Recent messages (this job)</h3>
@@ -262,6 +403,7 @@ const jobUuid = ${JSON.stringify(model.jobUuid)};
 const templates = ${tplJson};
 const TEMPLATE_BODIES = Object.fromEntries(templates.map((t) => [String(t.id), t.body]));
 const CTX = ${ctxJson};
+const FIELD_SUPPORT = ${fieldSupportJson};
 const VARS = [
   { key: 'customerName', label: 'Customer' },
   { key: 'jobNumber', label: 'Job #' },
@@ -279,6 +421,7 @@ const charRowEl = el('charRow');
 const segInfoEl = el('segInfo');
 const toastEl = el('toast');
 const btnSend = el('btnSend');
+const fieldWarningsEl = el('fieldWarnings');
 
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
@@ -302,33 +445,49 @@ function tidySmsWhitespace(text) {
 
 function isSm8FieldTag(key) {
   const k = String(key || '').toLowerCase();
-  if (k === 'document' || k === 'vendor') return true;
-  return /^(job|vendor|company|service|location|staff|asset|form)\\.[a-z0-9_.]+$/.test(k);
+  if (k === 'document' || k === 'vendor' || k === 'and_will_be_arriving_in_approximately_x_minutes') return true;
+  return /^(job|vendor|company|service|location|staff|asset|form|calculation)\\.[a-z0-9_.]+$/.test(k);
+}
+
+function templateKeys(text) {
+  const keys = [];
+  const seen = new Set();
+  String(text || '').replace(/\\{\\{[\\s\\S]*?\\}\\}|\\{([a-z0-9_.]+)\\}/gi, (match, key) => {
+    if (!key) return match;
+    const k = String(key).toLowerCase();
+    if (!seen.has(k)) {
+      seen.add(k);
+      keys.push(k);
+    }
+    return match;
+  });
+  return keys;
+}
+
+function fieldIssues(text) {
+  const exactMissing = [];
+  const derivedMissing = [];
+  const unsupported = [];
+  const mergeFields = CTX.mergeFields || {};
+  templateKeys(text).forEach((key) => {
+    const info = FIELD_SUPPORT[key];
+    if (!info) return;
+    if (info.status === 'unsupported') {
+      unsupported.push(key);
+      return;
+    }
+    const value = mergeFields[key];
+    if (typeof value === 'string' && value.trim()) return;
+    if (info.status === 'exact') exactMissing.push(key);
+    else derivedMissing.push(key);
+  });
+  return { exactMissing, derivedMissing, unsupported };
 }
 
 function renderPreview(text) {
-  const customer = CTX.customerName || '';
-  const parts = customer.trim().split(/\\s+/);
-  const desc = CTX.jobDescription || '';
-  const sm8 = {
-    'job.generated_job_id': CTX.jobNumber || '',
-    'job.status': CTX.status || '',
-    'job.job_address': CTX.address || '',
-    'job.address': CTX.address || '',
-    'job.contact_first': parts[0] || customer,
-    'job.contact_last': parts.slice(1).join(' '),
-    'job.contact_name': customer,
-    'job.company_name': customer,
-    'job.description': desc,
-    'job.category': CTX.jobCategory || '',
-    'job.total_price': CTX.totalPrice || '',
-    'service.name': desc || CTX.jobCategory || '',
-    'company.name': customer,
-    'vendor.name': CTX.vendorName || '',
-    'vendor': CTX.vendorName || '',
-    'document': '[invoice link]',
-    'location.phone_1': '',
-  };
+  const sm8 = Object.fromEntries(
+    Object.entries(CTX.mergeFields || {}).map(([k, v]) => [String(k).toLowerCase(), typeof v === 'string' ? v : ''])
+  );
   // Only known ServiceM8 tags — unknown {ss} etc. stay visible
   let out = text.replace(/\\{\\{[\\s\\S]*?\\}\\}|\\{([a-z0-9_.]+)\\}/gi, (match, k) => {
     if (k == null) return match;
@@ -340,6 +499,20 @@ function renderPreview(text) {
     return typeof v === 'string' ? v : '';
   });
   return tidySmsWhitespace(out);
+}
+
+function renderFieldWarnings(text) {
+  if (!fieldWarningsEl) return { blocking: false };
+  const issues = fieldIssues(text);
+  const blocking = issues.unsupported.length > 0 || issues.exactMissing.length > 0;
+  const lines = [];
+  if (issues.unsupported.length) lines.push('Unsupported here: ' + issues.unsupported.join(', '));
+  if (issues.exactMissing.length) lines.push('Missing ServiceM8 data: ' + issues.exactMissing.join(', '));
+  if (issues.derivedMissing.length) lines.push('Optional derived fields are blank: ' + issues.derivedMissing.join(', '));
+  fieldWarningsEl.hidden = lines.length === 0;
+  fieldWarningsEl.className = 'field-warnings' + (blocking ? ' err' : '');
+  fieldWarningsEl.innerHTML = lines.map((line) => '<div>' + escHtml(line) + '</div>').join('');
+  return { blocking };
 }
 
 function showToast(text, err) {
@@ -358,16 +531,29 @@ function invoke(event, args) {
   return client.invoke(event, Object.assign({ account_uuid: accountUuid }, args || {}));
 }
 
+function setRecipientMergeFields(name) {
+  const full = String(name || '').trim();
+  const parts = full ? full.split(/\s+/) : [];
+  if (!CTX.mergeFields) CTX.mergeFields = {};
+  CTX.mergeFields['job.contact_first'] = parts[0] || full;
+  CTX.mergeFields['job.contact_last'] = parts.slice(1).join(' ');
+  CTX.mergeFields['job.contact_name'] = full;
+}
+
 function updateCtxFromRecipient() {
   if (!recipientEl) return;
   const opt = recipientEl.selectedOptions[0];
-  if (opt?.dataset.name) CTX.customerName = opt.dataset.name;
+  if (opt?.dataset.name) {
+    CTX.customerName = opt.dataset.name;
+    setRecipientMergeFields(opt.dataset.name);
+  }
   refresh();
 }
 
 function refresh() {
   if (!msgEl || !previewEl) return;
   const rendered = renderPreview(msgEl.value);
+  const warnings = renderFieldWarnings(msgEl.value);
   previewEl.textContent = rendered || '(empty)';
   const len = rendered.length;
   const segs = len === 0 ? 0 : len <= 160 ? 1 : Math.ceil(len / 153);
@@ -376,7 +562,7 @@ function refresh() {
     ? '1 SMS segment'
     : segs + ' SMS segments (OK — sends as one message)';
   charRowEl.className = 'char-row' + (len > 160 ? ' warn' : '');
-  if (btnSend) btnSend.disabled = !rendered.trim();
+  if (btnSend) btnSend.disabled = !rendered.trim() || warnings.blocking;
 }
 
 if (msgEl) {
@@ -408,6 +594,7 @@ if (msgEl) {
   msgEl.addEventListener('input', refresh);
 
   const defaultId = ${JSON.stringify(String(defaultTpl))};
+  setRecipientMergeFields(CTX.customerName);
   if (defaultId && TEMPLATE_BODIES[defaultId]) {
     msgEl.value = TEMPLATE_BODIES[defaultId];
   }

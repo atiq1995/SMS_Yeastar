@@ -450,6 +450,21 @@ export const COMPOSER_STYLES = `
     color: #166534;
     margin-bottom: 4px;
   }
+  .field-warnings {
+    margin: -4px 0 14px;
+    padding: 8px 10px;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    color: #92400e;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .field-warnings.err {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #991b1b;
+  }
   .thread {
     border-top: 1px solid #e5e7eb;
     margin: 0 -16px;
