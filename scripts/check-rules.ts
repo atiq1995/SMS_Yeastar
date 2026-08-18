@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import type { RuleRow } from "../src/db/repository.js";
 import { evaluateRules } from "../src/engine/rules.js";
 import { customRecipientNumber } from "../src/engine/recipient.js";
+import { inferTrigger } from "../src/engine/rules.js";
 
 function rule(partial: Partial<RuleRow> & Pick<RuleRow, "id" | "trigger_type">): RuleRow {
   return {
@@ -38,3 +39,10 @@ assert.equal(customRecipientNumber("   "), undefined);
 assert.equal(customRecipientNumber("0412 345 678"), "0412345678");
 
 console.log("rules self-check ok");
+
+// Infer trigger: manifest webhooks often include `uuid` in changed_fields even for updates
+assert.equal(inferTrigger("job.status", "Quote", ["uuid", "status"]), "status_changed");
+assert.equal(inferTrigger("job.status", "Completed", ["uuid", "status"]), "completed");
+assert.equal(inferTrigger("job.status", undefined, ["uuid"]), "status_changed");
+
+console.log("inferTrigger self-check ok");

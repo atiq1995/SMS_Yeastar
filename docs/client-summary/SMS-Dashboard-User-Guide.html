@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8">
+  <title>SMS Dashboard — User Guide · Tom's Pest Control</title>
+  <style>
+    @page { size: A4; margin: 14mm 13mm 16mm; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", Calibri, Arial, sans-serif;
+      color: #1f2937;
+      line-height: 1.45;
+      font-size: 10.5pt;
+    }
+    h1 { font-size: 22pt; margin: 0 0 6px; color: #0f172a; letter-spacing: -0.02em; }
+    h2 {
+      font-size: 13.5pt;
+      margin: 20px 0 8px;
+      color: #0f172a;
+      border-bottom: 2px solid #3b82f6;
+      padding-bottom: 4px;
+      page-break-after: avoid;
+    }
+    h3 { font-size: 11pt; margin: 12px 0 5px; color: #1e3a8a; page-break-after: avoid; }
+    p { margin: 0 0 8px; }
+    ul, ol { margin: 0 0 10px; padding-left: 18px; }
+    li { margin-bottom: 3px; }
+    .cover {
+      background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 55%, #3b82f6 100%);
+      color: #fff;
+      border-radius: 12px;
+      padding: 22px 24px 20px;
+      margin-bottom: 16px;
+    }
+    .cover h1 { color: #fff; }
+    .cover .kicker { font-size: 9.5pt; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.85; margin: 0 0 8px; font-weight: 600; }
+    .cover .subtitle { font-size: 12.5pt; margin: 0 0 10px; opacity: 0.95; }
+    .cover p { margin: 0; font-size: 10.5pt; opacity: 0.92; }
+    .badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.18);
+      color: #fff;
+      font-size: 8.5pt;
+      font-weight: 600;
+      padding: 3px 9px;
+      border-radius: 999px;
+      margin: 0 6px 10px 0;
+    }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 8px 0 12px; }
+    .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 8px 0 12px; }
+    .card {
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #fff;
+      break-inside: avoid;
+    }
+    .card strong { display: block; color: #0f172a; margin-bottom: 3px; }
+    .card p { margin: 0; font-size: 9.5pt; color: #475569; }
+    .tip, .warn, .ok {
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin: 8px 0 12px;
+      break-inside: avoid;
+      font-size: 10pt;
+    }
+    .tip { background: #eff6ff; border: 1px solid #bfdbfe; }
+    .ok { background: #ecfdf5; border: 1px solid #a7f3d0; }
+    .warn { background: #fffbeb; border: 1px solid #fcd34d; }
+    .tip strong, .ok strong, .warn strong { display: block; margin-bottom: 2px; }
+    .flow {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin: 8px 0 12px;
+      break-inside: avoid;
+    }
+    .flow ol { margin: 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 9.5pt; margin: 6px 0 12px; }
+    th, td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: left; vertical-align: top; }
+    th { background: #f1f5f9; color: #334155; }
+    .shot { margin: 8px 0 14px; break-inside: avoid; page-break-inside: avoid; }
+    .shot img {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      box-shadow: 0 3px 12px rgba(15, 23, 42, 0.08);
+    }
+    .shot.narrow { max-width: 280px; margin-left: auto; margin-right: auto; }
+    .caption { font-size: 8.5pt; color: #64748b; text-align: center; margin-top: 5px; }
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 8.5pt;
+      background: #e2e8f0;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    .steps { counter-reset: step; list-style: none; padding-left: 0; }
+    .steps li {
+      position: relative;
+      padding-left: 32px;
+      margin-bottom: 7px;
+    }
+    .steps li::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 0; top: 0;
+      width: 22px; height: 22px;
+      background: #2563eb; color: #fff;
+      border-radius: 50%;
+      font-size: 9pt; font-weight: 700;
+      text-align: center; line-height: 22px;
+    }
+    .toc { columns: 2; column-gap: 18px; font-size: 10pt; margin: 4px 0 8px; }
+    .toc div { break-inside: avoid; margin-bottom: 3px; }
+    .toc span { color: #64748b; font-size: 9pt; }
+    .footer {
+      margin-top: 18px;
+      padding-top: 8px;
+      border-top: 1px solid #e2e8f0;
+      font-size: 8.5pt;
+      color: #64748b;
+    }
+    .page-break { page-break-before: always; }
+  </style>
+</head>
+<body>
+
+  <div class="cover">
+    <span class="badge">Tom's Pest Control</span>
+    <span class="badge">ServiceM8 add-on</span>
+    <span class="badge">Ready for daily use</span>
+    <p class="kicker">User guide</p>
+    <h1>SMS Dashboard</h1>
+    <p class="subtitle">How it works, and how to get the most from it</p>
+    <p>The add-on is live inside ServiceM8. Automatic job texts, manual Send SMS, inbox, and delivery log all run through your Yeastar TG400. It has been tested by our team and by yours.</p>
+  </div>
+
+  <div class="ok">
+    <strong>Status</strong>
+    Built, installed, tested, and working. You can use it in day-to-day work from ServiceM8. No extra login and no office PC left on — just keep the office router and Yeastar powered.
+  </div>
+
+  <h2>What’s in this guide</h2>
+  <div class="toc">
+    <div>1. What you have now</div>
+    <div>2. How a message gets sent</div>
+    <div>3. Where to open it in ServiceM8</div>
+    <div>4. Send SMS from a job</div>
+    <div>5. Automation (hands-free texts)</div>
+    <div>6. Templates &amp; personalisation</div>
+    <div>7. Inbox, log &amp; analytics</div>
+    <div>8. Settings</div>
+    <div>9. Using it at full potential</div>
+    <div>10. If a message doesn’t send</div>
+  </div>
+
+  <h2>1. What you have now</h2>
+  <p>Staff stay in ServiceM8. The add-on sends and receives SMS using your own SIM numbers on the Yeastar gateway.</p>
+  <div class="grid2">
+    <div class="card">
+      <strong>Automatic SMS</strong>
+      <p>When a job is created, a tech goes en route, or a job is completed, the customer can be texted automatically.</p>
+    </div>
+    <div class="card">
+      <strong>Send SMS on a job</strong>
+      <p>Open any job, pick a recipient and template, preview, and send — without leaving ServiceM8.</p>
+    </div>
+    <div class="card">
+      <strong>Inbox</strong>
+      <p>Customer replies appear in a conversation view, matched to the job by mobile number.</p>
+    </div>
+    <div class="card">
+      <strong>Log &amp; notes</strong>
+      <p>Every outbound SMS is logged. A note is also written on the ServiceM8 job so the team can see what was sent.</p>
+    </div>
+  </div>
+
+  <h2>2. How a message gets sent</h2>
+  <div class="flow">
+    <ol>
+      <li>Something happens on a job in ServiceM8 — or staff tap <strong>Send SMS</strong>.</li>
+      <li>The add-on loads the full job and customer (not just the webhook pointer).</li>
+      <li>It picks the right template, fills in name / job number / address, and finds the mobile.</li>
+      <li>The message is sent through your <strong>Yeastar TG400</strong> at the office.</li>
+      <li>If the customer replies, it shows in <strong>Inbox</strong>. If they have no mobile, nothing is sent.</li>
+    </ol>
+    <p style="margin:8px 0 0;font-size:9.5pt;color:#475569"><strong>ServiceM8</strong> → cloud app → office router → <strong>Yeastar TG400</strong> → customer’s phone</p>
+  </div>
+
+  <h2>3. Where to open it in ServiceM8</h2>
+  <table>
+    <thead>
+      <tr><th>What you want</th><th>Where to go</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Manage automations, templates, inbox, log</td>
+        <td><strong>Add-ons → SMS Dashboard</strong></td>
+      </tr>
+      <tr>
+        <td>Text someone about a specific job</td>
+        <td>Open the job → <strong>Send SMS</strong> action</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>If the dashboard looks blank or Send SMS can’t load job details, go to <strong>SMS Dashboard → Settings → Reconnect OAuth</strong> once, then try again.</p>
+
+  <div class="shot">
+    <img src="screenshots/overview.png" alt="SMS Dashboard Overview">
+    <p class="caption">Overview — 7-day send count, gateway status, and the other tabs along the top</p>
+  </div>
+
+  <h2 class="page-break">4. Send SMS from a job</h2>
+  <p>Use this for one-off messages: “we’re 10 minutes away”, a gate-code request, a reschedule, a quote nudge. Automation cannot cover every situation — this is how you stay personal.</p>
+  <ol class="steps">
+    <li>Open the job in ServiceM8.</li>
+    <li>Choose the <strong>Send SMS</strong> action.</li>
+    <li>Pick who to text (job contact or other mobiles on the job/company).</li>
+    <li>Pick a template, or choose <em>Custom message</em> and type your own.</li>
+    <li>Check the <strong>Preview</strong> — this is exactly what the customer will receive.</li>
+    <li>Tap <strong>Send SMS</strong>.</li>
+  </ol>
+  <div class="shot narrow">
+    <img src="screenshots/send-sms.png" alt="Send SMS from a job">
+    <p class="caption">Job Send SMS — recipient, template, live preview, then send</p>
+  </div>
+  <div class="tip">
+    <strong>No mobile listed?</strong>
+    Add a mobile on the job contact or company contact in ServiceM8, then open Send SMS again. The add-on will not guess a number.
+  </div>
+  <p>The composer also shows recent messages for that job, so you don’t repeat yourself. Aim for one SMS segment (about 160 characters) when you can — longer messages still send, they just use more segments.</p>
+
+  <h2>5. Automation — texts that send themselves</h2>
+  <p>Open <strong>SMS Dashboard → Automation</strong>. Each rule answers three questions: <em>when</em>, <em>what to say</em>, and <em>who gets it</em>.</p>
+  <div class="shot">
+    <img src="screenshots/rules.png" alt="Automation rules">
+    <p class="caption">Automation — map job events to a template. Turn a rule off if you don’t want that text.</p>
+  </div>
+  <h3>When a rule can fire</h3>
+  <table>
+    <thead>
+      <tr><th>When</th><th>Typical use</th><th>Watch-out</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Job created</strong></td>
+        <td>Booking received / we’ll be in touch</td>
+        <td>Fires once when the job is first created</td>
+      </tr>
+      <tr>
+        <td><strong>Status changed</strong></td>
+        <td>Quote sent, work order, cancelled</td>
+        <td>If you leave “Status becomes” blank, it can fire on <em>every</em> status change. Set a specific status, or turn this rule off.</td>
+      </tr>
+      <tr>
+        <td><strong>Technician en route</strong></td>
+        <td>Tech is on the way</td>
+        <td>Only fires if the job status matches Settings (default: En Route, Dispatched). Labels must match ServiceM8.</td>
+      </tr>
+      <tr>
+        <td><strong>Job completed</strong></td>
+        <td>Thank-you / job done</td>
+        <td>Fires when status becomes Completed</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3>Who receives it</h3>
+  <ul>
+    <li><strong>Customer (job contact)</strong> — usual choice for job updates.</li>
+    <li><strong>Company primary contact</strong> — useful when the site contact and the billing contact are different.</li>
+    <li><strong>This number</strong> — a fixed mobile (office, manager, after-hours). Good for internal alerts, not customer texts.</li>
+  </ul>
+  <p>After you add or edit rules, tap <strong>Save automations</strong>. A disabled rule never sends.</p>
+  <div class="warn">
+    <strong>Avoid double texts</strong>
+    Don’t run a catch-all “Status changed” rule <em>and</em> a “Job completed” rule for the same moment — the customer can get two messages. Keep one rule per situation.
+  </div>
+
+  <h2 class="page-break">6. Templates &amp; personalisation</h2>
+  <p>There are two template lists. They look similar; they are used in different places.</p>
+  <table>
+    <thead>
+      <tr><th>Where you write it</th><th>Used by</th><th>Placeholder style</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Internal templates</strong> (Templates tab)</td>
+        <td>Automation rules</td>
+        <td><code>{{customerName}}</code> <code>{{jobNumber}}</code> <code>{{address}}</code> <code>{{status}}</code></td>
+      </tr>
+      <tr>
+        <td><strong>ServiceM8 templates</strong> (same tab, or ServiceM8 itself)</td>
+        <td>Send SMS on a job</td>
+        <td><code>{job.contact_first}</code> <code>{job.generated_job_id}</code> <code>{job.job_address}</code> <code>{vendor.name}</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <p>Click the chips above the message box to insert fields. Always check the live preview — empty job fields are left blank rather than showing the tag.</p>
+  <h3>Starter wording (edit to your voice)</h3>
+  <table>
+    <thead>
+      <tr><th>Situation</th><th>Example</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>New job</td>
+        <td>Hi {{customerName}}, we received job {{jobNumber}}. We’ll be in touch soon. — Tom’s Pest Control</td>
+      </tr>
+      <tr>
+        <td>En route</td>
+        <td>Hi {{customerName}}, our technician is on the way to {{address}} for job {{jobNumber}}.</td>
+      </tr>
+      <tr>
+        <td>Completed</td>
+        <td>Hi {{customerName}}, job {{jobNumber}} is complete. Thanks for choosing Tom’s Pest Control.</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="tip">
+    <strong>Write like a text, not a letter</strong>
+    Name + what happens next + who it’s from. Skip long disclaimers. Keep it one segment when you can.
+  </div>
+
+  <h2>7. Inbox, log &amp; analytics</h2>
+  <h3>Inbox</h3>
+  <p>Open <strong>Inbox</strong>. Numbers are on the left; tap one to see the full thread. Replies are matched by mobile number. Refresh if you just received a text.</p>
+  <div class="shot">
+    <img src="screenshots/inbox.png" alt="SMS Inbox">
+    <p class="caption">Inbox — pick a number, read the conversation, see the matched job</p>
+  </div>
+  <p><strong>Make this a habit:</strong> check Inbox at the start of the day and after lunch. Gate codes, “we’re not home”, and reschedule requests land here — not in email.</p>
+  <h3>Log</h3>
+  <p>Every outbound SMS is listed with time, number, status, and a short body preview. If a customer says they never got a text, start here. Status <strong>sent</strong> means the gateway accepted it. <strong>failed</strong> means it did not go out — the Detail column usually says why.</p>
+  <h3>Analytics</h3>
+  <p>A simple 7-day outbound count plus how many inbound messages are stored. Use it to see whether volume looks normal, not as a full report pack.</p>
+
+  <h2>8. Settings</h2>
+  <table>
+    <thead>
+      <tr><th>Setting</th><th>What it does</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>En-route status labels</strong></td>
+        <td>Comma-separated ServiceM8 statuses that mean “tech is on the way” (default: <code>En Route,Dispatched</code>). Must match your job status names exactly.</td>
+      </tr>
+      <tr>
+        <td><strong>Test Yeastar</strong></td>
+        <td>Confirms the cloud app can still reach the office gateway. Use this if sends suddenly stop.</td>
+      </tr>
+      <tr>
+        <td><strong>Reconnect OAuth</strong></td>
+        <td>Re-authorises ServiceM8. Use if the dashboard or Send SMS can’t load jobs/templates.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 class="page-break">9. Using it at full potential</h2>
+  <p>The add-on is already working. These are the habits that make it earn its keep.</p>
+  <div class="grid2">
+    <div class="card">
+      <strong>1. Decide your four texts — then stop</strong>
+      <p>Most pest-control jobs only need: booking received, quote follow-up (if you quote), tech on the way, job done. Turn off everything else so customers are not spammed.</p>
+    </div>
+    <div class="card">
+      <strong>2. Put mobiles on every contact</strong>
+      <p>Automation and Send SMS both need a mobile on the job or company. No number = silent skip. Make this part of booking, not an afterthought.</p>
+    </div>
+    <div class="card">
+      <strong>3. Match your real ServiceM8 statuses</strong>
+      <p>If your board says “On Route” but Settings still say “En Route”, the en-route text will never send. Copy the label from ServiceM8.</p>
+    </div>
+    <div class="card">
+      <strong>4. Use Send SMS for the human bits</strong>
+      <p>Automation covers the standard journey. Staff should still send a quick text for access issues, “running late”, or “please confirm tomorrow”.</p>
+    </div>
+    <div class="card">
+      <strong>5. Treat Inbox like a phone</strong>
+      <p>A reply sitting unread is a customer waiting. Assign someone to watch Inbox during office hours.</p>
+    </div>
+    <div class="card">
+      <strong>6. Keep wording short and yours</strong>
+      <p>Use your company name, not a generic sender. Preview every new template once with a real job before you rely on it.</p>
+    </div>
+  </div>
+
+  <h3>Suggested setup for Tom’s Pest Control</h3>
+  <table>
+    <thead>
+      <tr><th>Rule</th><th>On?</th><th>Send to</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>New job — we received your booking</td><td>Yes</td><td>Job contact</td></tr>
+      <tr><td>Status = Quote — follow up / quote is ready</td><td>Only if you quote by SMS</td><td>Job contact</td></tr>
+      <tr><td>En route — technician on the way</td><td>Yes (highest value text)</td><td>Job contact</td></tr>
+      <tr><td>Completed — thank you</td><td>Yes</td><td>Job contact</td></tr>
+      <tr><td>Catch-all “any status change”</td><td><strong>Off</strong></td><td>—</td></tr>
+    </tbody>
+  </table>
+  <div class="ok">
+    <strong>Office reminder</strong>
+    The cloud app runs 24/7. SMS still needs the <strong>office router and Yeastar TG400 powered on</strong> with SIMs in. You do not need a PC left on.
+  </div>
+
+  <h2>10. If a message doesn’t send</h2>
+  <table>
+    <thead>
+      <tr><th>What you see</th><th>What to try</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Send SMS says no mobile</td>
+        <td>Add a mobile on the job or company contact, then reopen Send SMS.</td>
+      </tr>
+      <tr>
+        <td>Send SMS says no templates</td>
+        <td>Settings → Reconnect OAuth, then add a ServiceM8 template from the Templates tab.</td>
+      </tr>
+      <tr>
+        <td>Automation didn’t fire</td>
+        <td>Is the rule on and saved? Does the status label match? Does the contact have a mobile? Check the Log.</td>
+      </tr>
+      <tr>
+        <td>Customer didn’t receive it</td>
+        <td>Check Log status. If it says sent, the number or handset is the next place to look. If failed, use Detail and Test Yeastar.</td>
+      </tr>
+      <tr>
+        <td>No replies in Inbox</td>
+        <td>Customer must text the same number the SMS came from. Refresh Inbox. Confirm the Yeastar is on.</td>
+      </tr>
+      <tr>
+        <td>Dashboard blank</td>
+        <td>Hard-refresh the add-on iframe, then Reconnect OAuth.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>If Test Yeastar fails, the office internet, port-forward, or Yeastar itself needs a look — the ServiceM8 side is usually fine.</p>
+
+  <h2>Quick staff cheat-sheet</h2>
+  <div class="grid3">
+    <div class="card">
+      <strong>Every job</strong>
+      <p>Confirm a mobile is on the contact before the job goes to the field.</p>
+    </div>
+    <div class="card">
+      <strong>Office hours</strong>
+      <p>Check Inbox twice a day. Reply from the job with Send SMS when needed.</p>
+    </div>
+    <div class="card">
+      <strong>End of week</strong>
+      <p>Skim the Log. If volume dropped to zero, Test Yeastar and check the gateway is on.</p>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>SMS Dashboard · Tom's Pest Control · User guide · Screenshots use sample data for illustration.</p>
+    <p>Questions or something not sending? Contact the implementation team — include the job number and a screenshot of the Log row if you have one.</p>
+  </div>
+
+</body>
+</html>

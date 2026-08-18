@@ -282,22 +282,40 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
         .catch((err) => console.error("sms send failed", err));
       return;
     }
-    if (event === "webhook_subscription") {
-      res.json({});
-      return;
-    }
 
   const webhookish = event.includes("webhook") || payload.object === "job" || event.includes("job");
   if (webhookish || event === "job" || event.includes("status")) {
     const entry = webhookEntry(args);
+    const entryPayload = webhookEntry(payload as unknown as Record<string, unknown>);
     const changed = webhookChangedFields(args);
+    const status =
+      (typeof entry?.status === "string" ? entry.status : undefined) ||
+      (typeof entryPayload?.status === "string" ? entryPayload.status : undefined) ||
+      (typeof (args as { status?: unknown }).status === "string" ? String((args as { status?: unknown }).status) : undefined) ||
+      (typeof (payload as { status?: unknown }).status === "string" ? String((payload as { status?: unknown }).status) : undefined);
+
     const objectId =
       job ||
       (typeof entry?.uuid === "string" ? entry.uuid : undefined) ||
-      (payload.entry?.uuid as string) ||
-      payload.object_uuid;
-    const status = (typeof entry?.status === "string" ? entry.status : undefined) || (args.status as string);
-    const eventType = event.includes("create") ? "job.created" : event || "job.status";
+      (typeof entryPayload?.uuid === "string" ? entryPayload.uuid : undefined) ||
+      (typeof entry?.job_uuid === "string" ? entry.job_uuid : undefined) ||
+      (typeof entryPayload?.job_uuid === "string" ? entryPayload.job_uuid : undefined) ||
+      (typeof entry?.object_uuid === "string" ? entry.object_uuid : undefined) ||
+      (typeof entryPayload?.object_uuid === "string" ? entryPayload.object_uuid : undefined) ||
+      (typeof payload.entry?.uuid === "string" ? String(payload.entry?.uuid) : undefined) ||
+      (typeof (payload as { object_uuid?: unknown }).object_uuid === "string" ? String((payload as { object_uuid?: unknown }).object_uuid) : undefined);
+
+    // For manifest `webhooks`, ServiceM8 invokes us with `webhook_subscription` and the payload tells us what changed.
+    // Keep `event_type` stable so `inferTrigger()` can decide from `status` and `changed_fields`.
+    const changedLower = changed.map((f) => f.toLowerCase());
+    const eventType =
+      event === "webhook_subscription"
+        ? changedLower.some((f) => f.includes("generated_job_id"))
+          ? "job.created"
+          : "job.status"
+        : event.includes("create")
+          ? "job.created"
+          : event || "job.status";
     if (objectId && acct) {
       const fieldsKey = changed.length ? changed.slice().sort().join(",") : "none";
       void processJobEvent({

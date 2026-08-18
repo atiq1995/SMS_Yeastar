@@ -44,7 +44,6 @@ export function inferTrigger(
   if (
     e.includes("create") ||
     e === "job.created" ||
-    changed.includes("uuid") ||
     changed.includes("generated_job_id")
   ) {
     return "job_created";
