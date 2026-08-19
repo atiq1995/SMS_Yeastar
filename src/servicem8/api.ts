@@ -85,8 +85,8 @@ function pickName(record: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
-export type SmsRecipient = { mobile: string; label: string; name: string };
-export type ResolvedSmsRecipient = { mobile: string; name: string };
+export type SmsRecipient = { mobile: string; label: string; name: string; first?: string; last?: string };
+export type ResolvedSmsRecipient = { mobile: string; name: string; first?: string; last?: string };
 
 /** Job + company contacts with mobiles for the SMS composer */
 export async function listJobRecipients(
@@ -96,18 +96,20 @@ export async function listJobRecipients(
 ): Promise<SmsRecipient[]> {
   const seen = new Set<string>();
   const out: SmsRecipient[] = [];
-  const add = (mobile: string | undefined, name: string, label: string) => {
+  const add = (mobile: string | undefined, name: string, label: string, c?: Record<string, unknown>) => {
     if (!mobile) return;
     if (seen.has(mobile)) return;
     seen.add(mobile);
-    out.push({ mobile, name, label });
+    const first = c && typeof c.first === "string" && c.first.trim() ? c.first.trim() : undefined;
+    const last = c && typeof c.last === "string" && c.last.trim() ? c.last.trim() : undefined;
+    out.push({ mobile, name, label, first, last });
   };
 
   const jobUuid = typeof job.uuid === "string" ? job.uuid : undefined;
   if (jobUuid) {
     for (const c of await listJobContacts(accessToken, jobUuid)) {
       const name = pickName(c) || "Contact";
-      add(pickPhone(c), name, `${name} — job contact`);
+      add(pickPhone(c), name, `${name} — job contact`, c);
     }
   }
 
@@ -121,12 +123,12 @@ export async function listJobRecipients(
     const primary = contacts.find((c) => c.is_primary_contact === "1" || c.is_primary_contact === 1);
     if (primary) {
       const name = pickName(primary) || companyName;
-      add(pickPhone(primary), name, `${name} — primary contact`);
+      add(pickPhone(primary), name, `${name} — primary contact`, primary);
     }
     for (const c of contacts) {
       if (c === primary) continue;
       const name = pickName(c) || companyName;
-      add(pickPhone(c), name, `${name} — company contact`);
+      add(pickPhone(c), name, `${name} — company contact`, c);
     }
   }
 
@@ -363,7 +365,11 @@ export async function resolveCompanyPrimaryRecipient(
     const primary = contacts.find((c) => c.is_primary_contact === "1" || c.is_primary_contact === 1);
     if (primary) {
       const mobile = pickPhone(primary);
-      if (mobile) return { mobile, name: pickName(primary) || resolveCompanyName(company) };
+      if (mobile) {
+        const first = typeof primary.first === "string" && primary.first.trim() ? primary.first.trim() : undefined;
+        const last = typeof primary.last === "string" && primary.last.trim() ? primary.last.trim() : undefined;
+        return { mobile, name: pickName(primary) || resolveCompanyName(company), first, last };
+      }
     }
   }
   const mobile = pickPhone(company);
@@ -400,7 +406,11 @@ export async function resolveJobRecipient(
   if (jobUuid) {
     for (const c of await listJobContacts(accessToken, jobUuid)) {
       mobile = pickPhone(c);
-      if (mobile) return { mobile, name: pickName(c) || "Contact" };
+      if (mobile) {
+        const first = typeof c.first === "string" && c.first.trim() ? c.first.trim() : undefined;
+        const last = typeof c.last === "string" && c.last.trim() ? c.last.trim() : undefined;
+        return { mobile, name: pickName(c) || "Contact", first, last };
+      }
     }
   }
 

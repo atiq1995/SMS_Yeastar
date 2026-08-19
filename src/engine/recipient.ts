@@ -17,7 +17,7 @@ export async function resolveRuleRecipient(
   accessToken: string,
   job: ServiceM8Job,
   company: ServiceM8Company
-): Promise<{ mobile: string; name?: string } | undefined> {
+): Promise<{ mobile: string; name?: string; first?: string; last?: string } | undefined> {
   const type = rule.recipient_type || "job_contact";
   if (type === "custom") {
     const mobile = customRecipientNumber(rule.recipient_number);

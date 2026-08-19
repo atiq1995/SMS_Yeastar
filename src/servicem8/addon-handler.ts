@@ -223,6 +223,8 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
       const toNumber = typeof args.to_number === "string" ? args.to_number.replace(/\s+/g, "") : "";
       const message = typeof args.message === "string" ? args.message.trim() : "";
       const recipientName = typeof args.recipient_name === "string" ? args.recipient_name : undefined;
+      const recipientFirst = typeof args.recipient_first === "string" && args.recipient_first.trim() ? args.recipient_first.trim() : undefined;
+      const recipientLast = typeof args.recipient_last === "string" && args.recipient_last.trim() ? args.recipient_last.trim() : undefined;
       if (!jobId) {
         sendInvokeJson(res, { error: "missing_job_uuid" });
         return;
@@ -251,6 +253,8 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
       const vendorName = await getVendorName(token);
       const vendorPhone1 = await getLocationPhone1(token, j).catch(() => undefined);
       const ctx = buildJobTemplateContext(j, company, toNumber, recipientName);
+      if (recipientFirst) ctx.contactFirst = recipientFirst;
+      if (recipientLast) ctx.contactLast = recipientLast;
       ctx.nextBookingDate = booking.nextBookingDate;
       ctx.nextBookingDateExtended = booking.nextBookingDateExtended;
       ctx.nextBookingTime = booking.nextBookingTime;

@@ -377,7 +377,7 @@ export const SHARED_STYLES = `
 export const COMPOSER_STYLES = `
   html, body { height: 100%; }
   body { padding: 0; background: #fff; overflow: hidden; }
-  .composer { max-width: 100%; height: 100vh; display: flex; flex-direction: column; }
+  .composer { max-width: 100%; height: 100vh; max-height: 100%; display: flex; flex-direction: column; overflow: hidden; }
   .composer-header {
     display: flex;
     align-items: center;

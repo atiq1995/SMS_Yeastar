@@ -34,7 +34,7 @@ export type JobComposerModel = {
   status: string;
   customerName: string;
   address: string;
-  recipients: { mobile: string; label: string; name: string }[];
+  recipients: { mobile: string; label: string; name: string; first?: string; last?: string }[];
   templates: { id: string; name: string; body: string }[];
   thread: { dir: "out" | "in"; body: string; at: string; number: string }[];
   defaultTemplateId: string | null;
@@ -118,6 +118,8 @@ export async function loadJobComposerModel(
       vendorName: vendorName ?? "",
       vendorPhone1: vendorPhone1 ?? "",
       customerName: initialRecipientName,
+      contactFirst: recipients[0]?.first,
+      contactLast: recipients[0]?.last,
       companyName: ctx.companyName ?? ctx.customerName ?? "Customer",
       address: ctx.address ?? "",
       status: ctx.status ?? "",
@@ -205,6 +207,8 @@ function buildComposerMergeFields(args: {
   vendorName: string;
   vendorPhone1: string;
   customerName: string;
+  contactFirst?: string;
+  contactLast?: string;
   companyName: string;
   address: string;
   status: string;
@@ -248,9 +252,9 @@ function buildComposerMergeFields(args: {
     "job.job_address": address,
     "job.address": address,
     "job.job_address_singleline": address.replace(/\n/g, ", "),
-    "job.contact_first": text(job, "contact_first") || firstWord(customerName) || customerName,
-    "job.contact_last": text(job, "contact_last") || customerName.trim().split(/\s+/).slice(1).join(" "),
-    "job.contact_name": text(job, "contact_name") || customerName,
+    "job.contact_first": text(job, "contact_first") || args.contactFirst || firstWord(customerName) || customerName,
+    "job.contact_last": text(job, "contact_last") || args.contactLast || customerName.trim().split(/\s+/).slice(1).join(" "),
+    "job.contact_name": text(job, "contact_name") || (args.contactFirst ? `${args.contactFirst} ${args.contactLast || ""}`.trim() : customerName),
     "job.company_name": text(job, "company_name") || companyName,
     "job.description": description,
     "job.category": category,
@@ -318,6 +322,8 @@ export function renderJobComposerHtml(model: JobComposerModel): string {
   const tplJson = JSON.stringify(model.templates.map((t) => ({ id: t.id, name: t.name, body: t.body })));
   const ctxJson = JSON.stringify({
     customerName: model.recipients[0]?.name ?? model.customerName,
+    contactFirst: model.recipients[0]?.first ?? "",
+    contactLast: model.recipients[0]?.last ?? "",
     jobNumber: model.jobNumber,
     status: model.status,
     address: model.address,
@@ -334,7 +340,7 @@ export function renderJobComposerHtml(model: JobComposerModel): string {
     ? model.recipients
         .map(
           (r, i) =>
-            `<option value="${esc(r.mobile)}" data-name="${esc(r.name)}"${i === 0 ? " selected" : ""}>${esc(r.label)} — ${esc(formatPhone(r.mobile))}</option>`
+            `<option value="${esc(r.mobile)}" data-name="${esc(r.name)}" data-first="${esc(r.first || "")}" data-last="${esc(r.last || "")}"${i === 0 ? " selected" : ""}>${esc(r.label)} — ${esc(formatPhone(r.mobile))}</option>`
         )
         .join("")
     : "";
@@ -531,12 +537,11 @@ function invoke(event, args) {
   return client.invoke(event, Object.assign({ account_uuid: accountUuid }, args || {}));
 }
 
-function setRecipientMergeFields(name) {
+function setRecipientMergeFields(name, first, last) {
   const full = String(name || '').trim();
-  const parts = full ? full.split(/\s+/) : [];
   if (!CTX.mergeFields) CTX.mergeFields = {};
-  CTX.mergeFields['job.contact_first'] = parts[0] || full;
-  CTX.mergeFields['job.contact_last'] = parts.slice(1).join(' ');
+  CTX.mergeFields['job.contact_first'] = first || full.split(/\s+/)[0] || full;
+  CTX.mergeFields['job.contact_last'] = last || full.split(/\s+/).slice(1).join(' ');
   CTX.mergeFields['job.contact_name'] = full;
 }
 
@@ -545,7 +550,7 @@ function updateCtxFromRecipient() {
   const opt = recipientEl.selectedOptions[0];
   if (opt?.dataset.name) {
     CTX.customerName = opt.dataset.name;
-    setRecipientMergeFields(opt.dataset.name);
+    setRecipientMergeFields(opt.dataset.name, opt.dataset.first, opt.dataset.last);
   }
   refresh();
 }
@@ -594,7 +599,7 @@ if (msgEl) {
   msgEl.addEventListener('input', refresh);
 
   const defaultId = ${JSON.stringify(String(defaultTpl))};
-  setRecipientMergeFields(CTX.customerName);
+  setRecipientMergeFields(CTX.customerName, CTX.contactFirst, CTX.contactLast);
   if (defaultId && TEMPLATE_BODIES[defaultId]) {
     msgEl.value = TEMPLATE_BODIES[defaultId];
   }
@@ -618,6 +623,8 @@ btnSend?.addEventListener('click', async () => {
       job_uuid: jobUuid,
       to_number: to,
       recipient_name: recipientName,
+      recipient_first: (CTX.mergeFields || {})['job.contact_first'] || '',
+      recipient_last: (CTX.mergeFields || {})['job.contact_last'] || '',
       message: text,
     }));
     if (res.error) {

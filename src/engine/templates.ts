@@ -20,6 +20,8 @@ export type TemplateContext = {
   nextBookingTime?: string;
   serviceWarrantyPeriod?: string;
   serviceDescription?: string;
+  contactFirst?: string;
+  contactLast?: string;
   [key: string]: string | undefined;
 };
 

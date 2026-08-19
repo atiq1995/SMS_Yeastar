@@ -108,6 +108,8 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
     const recipientCtx = {
       ...ctx,
       customerName: recipient.name || ctx.customerName,
+      contactFirst: recipient.first,
+      contactLast: recipient.last,
       status,
       mobile,
     };
