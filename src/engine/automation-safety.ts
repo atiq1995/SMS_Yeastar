@@ -38,7 +38,7 @@ export function automationQuietHours(now = new Date()): { blocked: boolean; star
 }
 
 export function blockedByKeyword(job: Record<string, unknown>, company: Record<string, unknown>): string | undefined {
-  const keywords = parts("automation_exclusion_keywords", "admin,internal,test");
+  const keywords = parts("automation_exclusion_keywords", "admin,internal,test,not a job");
   if (!keywords.length) return undefined;
   const haystack = [
     job.generated_job_id,
