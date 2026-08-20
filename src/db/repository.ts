@@ -139,31 +139,86 @@ export function insertOutbound(row: {
   return Number(r.lastInsertRowid);
 }
 
+/** Statuses that count as "already sent / in flight" for cooldown */
+const COOLDOWN_STATUSES = "('sent','dry_run','test_redirected','test_redirected_dry_run','submitted','queued')";
+
 export function hasRecentOutboundDuplicate(input: {
   job_uuid?: string;
   to_number: string;
   body: string;
   window_minutes: number;
 }): boolean {
+  const window = `-${Math.max(1, input.window_minutes)} minutes`;
+  // ponytail: match job+body only — under UAT redirect the stored to_number is the test mobile,
+  // so checking the customer number never finds the prior send. Ceiling: two jobs with identical
+  // body collide only if they share a job_uuid (they don't).
+  if (input.job_uuid) {
+    const row = db()
+      .prepare(
+        `SELECT 1 FROM outbound_messages
+         WHERE job_uuid = ? AND body = ?
+           AND created_at >= datetime('now', ?)
+           AND status IN ${COOLDOWN_STATUSES}
+         LIMIT 1`
+      )
+      .get(input.job_uuid, input.body, window) as { 1: number } | undefined;
+    return !!row;
+  }
   const row = db()
     .prepare(
-      `SELECT 1
-       FROM outbound_messages
-       WHERE job_uuid IS ?
-         AND to_number = ?
-         AND body = ?
+      `SELECT 1 FROM outbound_messages
+       WHERE job_uuid IS NULL AND to_number = ? AND body = ?
          AND created_at >= datetime('now', ?)
-         AND status IN ('sent', 'dry_run', 'test_redirected', 'test_redirected_dry_run', 'submitted')
-       ORDER BY id DESC
+         AND status IN ${COOLDOWN_STATUSES}
        LIMIT 1`
     )
-    .get(
-      input.job_uuid ?? null,
-      input.to_number,
-      input.body,
-      `-${Math.max(1, input.window_minutes)} minutes`
-    ) as { 1: number } | undefined;
+    .get(input.to_number, input.body, window) as { 1: number } | undefined;
   return !!row;
+}
+
+/** Atomically claim a send slot (queued row) or return null if within cooldown. */
+export function claimOutboundSend(
+  row: {
+    account_uuid?: string;
+    job_uuid?: string;
+    to_number: string;
+    body: string;
+    idempotency_key?: string;
+  },
+  window_minutes: number
+): number | null {
+  return db().transaction(() => {
+    if (
+      hasRecentOutboundDuplicate({
+        job_uuid: row.job_uuid,
+        to_number: row.to_number,
+        body: row.body,
+        window_minutes,
+      })
+    ) {
+      return null;
+    }
+    return insertOutbound({
+      ...row,
+      status: "queued",
+      provider_response: "Claimed for send",
+    });
+  })();
+}
+
+export function updateOutbound(
+  id: number,
+  patch: { status: string; provider_response?: string; to_number?: string }
+): void {
+  db()
+    .prepare(
+      `UPDATE outbound_messages
+       SET status = ?,
+           provider_response = COALESCE(?, provider_response),
+           to_number = COALESCE(?, to_number)
+       WHERE id = ?`
+    )
+    .run(patch.status, patch.provider_response ?? null, patch.to_number ?? null, id);
 }
 
 export function listInbound(limit = 100): Record<string, unknown>[] {

@@ -2,7 +2,8 @@ import { getJob, getCompany, getLocationPhone1, getNextBookingContext, getStaff,
 import { getAccessToken } from "../servicem8/oauth.js";
 import {
   getTemplate,
-  hasRecentOutboundDuplicate,
+  claimOutboundSend,
+  updateOutbound,
   insertOutbound,
   listRules,
   logEvent,
@@ -161,14 +162,18 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
       lastFail = "blocked_quiet_hours";
       continue;
     }
-    if (
-      hasRecentOutboundDuplicate({
+    // Claim before send so concurrent webhooks can't both pass the cooldown check
+    const claimId = claimOutboundSend(
+      {
+        account_uuid: input.account_uuid,
         job_uuid: jobUuid,
         to_number: mobile,
         body,
-        window_minutes: cooldownMinutes,
-      })
-    ) {
+        idempotency_key: idem,
+      },
+      cooldownMinutes
+    );
+    if (claimId == null) {
       insertOutbound({
         account_uuid: input.account_uuid,
         job_uuid: jobUuid,
@@ -176,22 +181,14 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
         body,
         status: "blocked_duplicate",
         provider_response: `Blocked duplicate within ${cooldownMinutes} minutes`,
-        idempotency_key: idem,
+        idempotency_key: `${idem}:dup`,
       });
       lastFail = "blocked_duplicate";
       continue;
     }
     const guarded = guardOutbound(mobile, body, jobUuid);
     if (!guarded.ok) {
-      insertOutbound({
-        account_uuid: input.account_uuid,
-        job_uuid: jobUuid,
-        to_number: mobile,
-        body,
-        status: "blocked_test_mode",
-        provider_response: guarded.reason,
-        idempotency_key: idem,
-      });
+      updateOutbound(claimId, { status: "blocked_test_mode", provider_response: guarded.reason });
       lastFail = guarded.reason;
       continue;
     }
@@ -207,15 +204,14 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
           ? "dry_run"
           : "submitted"
         : "failed";
-    insertOutbound({
-      account_uuid: input.account_uuid,
-      job_uuid: jobUuid,
-      to_number: guarded.destination,
-      body,
-      status: statusValue,
-      provider_response: yeastarResultDetail(result),
-      idempotency_key: idem,
-    });
+    const detail = [
+      yeastarResultDetail(result),
+      guarded.redirected ? `redirected from ${mobile} → ${guarded.destination}` : "",
+    ]
+      .filter(Boolean)
+      .join(" | ");
+    // Keep to_number as intended recipient so cooldown + log stay aligned under UAT redirect
+    updateOutbound(claimId, { status: statusValue, provider_response: detail });
     if (result.accepted) {
       sentAny = true;
       void createJobNote(
