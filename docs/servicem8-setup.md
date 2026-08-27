@@ -22,4 +22,4 @@ For a full step-by-step testing walkthrough (EC2, temporary HTTPS without a clie
 | `webhook_subscription` | Acknowledge webhook registration |
 | Job webhooks | Status changes + new jobs → rules engine |
 
-OAuth scopes: `read_jobs read_customers manage_customers`.
+OAuth scopes: `read_jobs read_customers manage_customers … manage_badges` (badges list/picker needs `manage_badges`).

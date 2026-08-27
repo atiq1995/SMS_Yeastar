@@ -436,7 +436,8 @@ export type ServiceM8Badge = { uuid: string; name: string };
 export async function listBadges(accessToken: string): Promise<ServiceM8Badge[]> {
   const res = await sm8Fetch("/api_1.0/badge.json", accessToken);
   if (!res.ok) {
-    console.warn("listBadges failed", res.status);
+    const body = (await res.text()).slice(0, 200);
+    console.warn("listBadges failed", res.status, body);
     return [];
   }
   const data = (await res.json()) as unknown;
