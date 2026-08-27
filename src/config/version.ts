@@ -1,2 +1,2 @@
 /** Bump this whenever shipping UI/behavior changes so the add-on can show it. */
-export const APP_VERSION = "1.1.1";
+export const APP_VERSION = "1.1.2";
