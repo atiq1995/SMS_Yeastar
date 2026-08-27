@@ -5,13 +5,17 @@ import { getVendorUuid } from "./api.js";
 const AUTH_URL = "https://go.servicem8.com/oauth/authorize";
 const TOKEN_URL = "https://go.servicem8.com/oauth/access_token";
 
+/** Keep in sync with manifest.json oauth.scope */
+export const OAUTH_SCOPES =
+  "vendor read_jobs read_customers manage_customers read_customer_contacts read_job_contacts read_staff read_schedule read_locations manage_templates publish_job_notes manage_badges";
+
 export function authorizeUrl(state?: string): string {
   requireServiceM8OAuth();
   const u = new URL(AUTH_URL);
   u.searchParams.set("response_type", "code");
   u.searchParams.set("client_id", env.servicem8AppId);
   u.searchParams.set("redirect_uri", env.servicem8RedirectUri);
-  u.searchParams.set("scope", "vendor read_jobs read_customers manage_customers read_customer_contacts manage_templates publish_job_notes");
+  u.searchParams.set("scope", OAUTH_SCOPES);
   if (state) u.searchParams.set("state", state);
   return u.toString();
 }
@@ -91,11 +95,13 @@ export async function getAccessToken(account_uuid: string): Promise<string | und
   }
 }
 
-/** JWT may include a short-lived token; else fall back to stored OAuth */
+/** Prefer stored OAuth (full scopes from authorizeUrl); JWT is often missing newly added scopes. */
 export async function resolveAccessToken(
   accountHint: string,
   jwtAuth?: { accessToken?: string }
 ): Promise<string | undefined> {
+  const stored = await getAccessToken(accountHint);
+  if (stored) return stored;
   if (jwtAuth?.accessToken) return jwtAuth.accessToken;
-  return getAccessToken(accountHint);
+  return undefined;
 }
