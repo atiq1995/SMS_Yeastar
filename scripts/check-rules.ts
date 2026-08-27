@@ -13,6 +13,11 @@ function rule(partial: Partial<RuleRow> & Pick<RuleRow, "id" | "trigger_type">):
     sort_order: 0,
     recipient_type: "job_contact",
     recipient_number: null,
+    badge_json: null,
+    suppress_badge_json: null,
+    schedule_offset_value: null,
+    schedule_offset_unit: null,
+    schedule_anchor: null,
     ...partial,
   };
 }
@@ -26,13 +31,33 @@ const twoCompleted = evaluateRules(
   ],
   "completed",
   { status: "Completed" },
-  "En Route,Dispatched"
+  { enRouteStatuses: "En Route,Dispatched" }
 );
 assert.equal(twoCompleted.length, 2);
 assert.deepEqual(
   twoCompleted.map((r) => r.id),
   [1, 2]
 );
+
+const badgeHit = evaluateRules(
+  [
+    rule({
+      id: 10,
+      trigger_type: "badge_added",
+      badge_json: JSON.stringify([{ uuid: "u1", name: "Booking Reminder" }]),
+    }),
+    rule({
+      id: 11,
+      trigger_type: "badge_added",
+      badge_json: JSON.stringify([{ uuid: "u2", name: "Other" }]),
+    }),
+  ],
+  "badge_added",
+  {},
+  { addedBadges: [{ uuid: "u1", name: "Booking Reminder" }] }
+);
+assert.equal(badgeHit.length, 1);
+assert.equal(badgeHit[0]?.id, 10);
 
 assert.equal(customRecipientNumber(""), undefined);
 assert.equal(customRecipientNumber("   "), undefined);
@@ -44,5 +69,6 @@ console.log("rules self-check ok");
 assert.equal(inferTrigger("job.status", "Quote", ["uuid", "status"]), "status_changed");
 assert.equal(inferTrigger("job.status", "Completed", ["uuid", "status"]), "completed");
 assert.equal(inferTrigger("job.status", undefined, ["uuid"]), "status_changed");
+assert.equal(inferTrigger("job.status", "Quote", ["uuid", "badges", "status"]), "status_changed");
 
 console.log("inferTrigger self-check ok");

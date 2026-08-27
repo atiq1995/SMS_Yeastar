@@ -44,6 +44,10 @@ Persistent decisions and context. **No secrets here** — credentials live in se
 | Status changed | Per-status template mapping |
 | Technician en route | Status = En Route / Dispatched (configurable) |
 | Job completed | Status = Completed |
+| Badge added | Job `badges` field change (diff vs snapshot) |
+| Scheduled send | Offset after badge added or job completed |
+
+UAT redirect is configurable from the SMS Dashboard Settings tab (takes effect immediately after Save).
 
 ## Open questions
 

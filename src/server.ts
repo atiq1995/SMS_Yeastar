@@ -3,6 +3,7 @@ import { env } from "./config/env.js";
 import { handleAddonPost } from "./servicem8/addon-handler.js";
 import { authorizeUrl, exchangeCode } from "./servicem8/oauth.js";
 import { startYeastarReceive } from "./yeastar/receive.js";
+import { startScheduledSendWorker } from "./workers/scheduled-sends.js";
 
 const app = express();
 
@@ -38,4 +39,5 @@ app.post("/addon", express.raw({ type: "*/*", limit: "1mb" }), (req, res) => {
 app.listen(env.port, () => {
   console.log(`listening ${env.port}`);
   startYeastarReceive();
+  startScheduledSendWorker();
 });

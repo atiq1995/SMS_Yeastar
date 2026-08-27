@@ -1,4 +1,5 @@
 import { env } from "../config/env.js";
+import { getSetting } from "../db/repository.js";
 
 export type GuardResult =
   | { ok: true; destination: string; message: string; redirected: boolean }
@@ -17,22 +18,37 @@ function phonesMatch(a: string, b: string): boolean {
   return false;
 }
 
-/** ponytail: env-only UAT guard — set SMS_TEST_MOBILE and/or SMS_TEST_JOB_UUID in .env */
-export function guardOutbound(destination: string, message: string, jobUuid?: string): GuardResult {
-  const testJob = env.smsTestJobUuid;
-  const testMobile = env.smsTestMobile;
+/** Dashboard settings win after first Save; until then fall back to .env. */
+export function resolveUatConfig(): { enabled: boolean; mobile: string; jobOnly: string } {
+  const configured = getSetting("uat_configured") === "1";
+  if (configured) {
+    return {
+      enabled: getSetting("uat_enabled") === "1",
+      mobile: (getSetting("uat_redirect_number") ?? "").trim(),
+      jobOnly: env.smsTestJobUuid,
+    };
+  }
+  return {
+    enabled: !!(env.smsTestMobile || env.smsTestJobUuid),
+    mobile: env.smsTestMobile,
+    jobOnly: env.smsTestJobUuid,
+  };
+}
 
-  if (testJob) {
-    if (!jobUuid || jobUuid !== testJob) {
-      return { ok: false, reason: `test_mode: only job ${testJob.slice(0, 8)}… may send` };
+export function guardOutbound(destination: string, message: string, jobUuid?: string): GuardResult {
+  const uat = resolveUatConfig();
+
+  if (uat.jobOnly) {
+    if (!jobUuid || jobUuid !== uat.jobOnly) {
+      return { ok: false, reason: `test_mode: only job ${uat.jobOnly.slice(0, 8)}… may send` };
     }
   }
 
-  if (testMobile) {
-    if (!phonesMatch(destination, testMobile)) {
+  if (uat.enabled && uat.mobile) {
+    if (!phonesMatch(destination, uat.mobile)) {
       return {
         ok: true,
-        destination: testMobile,
+        destination: uat.mobile,
         message: `[TEST — was ${destination}]\n${message}`,
         redirected: true,
       };
@@ -43,12 +59,15 @@ export function guardOutbound(destination: string, message: string, jobUuid?: st
 }
 
 export function isTestMode(): boolean {
-  return !!(env.smsTestMobile || env.smsTestJobUuid);
+  const uat = resolveUatConfig();
+  return !!(uat.enabled && uat.mobile) || !!uat.jobOnly;
 }
 
 export function testModeLabel(): string {
+  const uat = resolveUatConfig();
   const parts: string[] = [];
-  if (env.smsTestMobile) parts.push(`mobile → ${env.smsTestMobile}`);
-  if (env.smsTestJobUuid) parts.push(`job ${env.smsTestJobUuid.slice(0, 8)}… only`);
-  return parts.join(" · ");
+  if (uat.enabled && uat.mobile) parts.push(`mobile → ${uat.mobile}`);
+  if (uat.jobOnly) parts.push(`job ${uat.jobOnly.slice(0, 8)}… only`);
+  if (!parts.length && uat.enabled) parts.push("on (set redirect number)");
+  return parts.join(" · ") || "on";
 }

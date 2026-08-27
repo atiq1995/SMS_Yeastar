@@ -430,3 +430,40 @@ export async function resolveJobRecipient(
   }
   return undefined;
 }
+
+export type ServiceM8Badge = { uuid: string; name: string };
+
+export async function listBadges(accessToken: string): Promise<ServiceM8Badge[]> {
+  const res = await sm8Fetch("/api_1.0/badge.json", accessToken);
+  if (!res.ok) {
+    console.warn("listBadges failed", res.status);
+    return [];
+  }
+  const data = (await res.json()) as unknown;
+  if (!Array.isArray(data)) return [];
+  return data
+    .filter((b) => b && typeof b === "object")
+    .map((b) => {
+      const row = b as Record<string, unknown>;
+      const active = row.active;
+      if (active === 0 || active === "0") return null;
+      const uuid = typeof row.uuid === "string" ? row.uuid.trim() : "";
+      const name = typeof row.name === "string" ? row.name.trim() : "";
+      if (!uuid || !name) return null;
+      return { uuid, name };
+    })
+    .filter((b): b is ServiceM8Badge => !!b)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function resolveBadgesByUuids(
+  accessToken: string,
+  uuids: string[]
+): Promise<ServiceM8Badge[]> {
+  if (!uuids.length) return [];
+  const all = await listBadges(accessToken);
+  const byUuid = new Map(all.map((b) => [b.uuid.toLowerCase(), b]));
+  return uuids
+    .map((u) => byUuid.get(u.toLowerCase()) || { uuid: u, name: u })
+    .filter((b) => b.uuid);
+}

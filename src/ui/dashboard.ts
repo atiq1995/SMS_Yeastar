@@ -4,14 +4,15 @@ import {
   getSetting,
   listInbound,
   listOutbound,
+  listPendingScheduled,
   listRules,
   listTemplates,
 } from "../db/repository.js";
 import { env } from "../config/env.js";
 import { APP_VERSION } from "../config/version.js";
-import { isTestMode, testModeLabel } from "../yeastar/guard.js";
+import { isTestMode, resolveUatConfig, testModeLabel } from "../yeastar/guard.js";
 import { resolveAccessToken } from "../servicem8/oauth.js";
-import { createSmsTemplate, listSmsTemplates } from "../servicem8/api.js";
+import { createSmsTemplate, listBadges, listSmsTemplates } from "../servicem8/api.js";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -29,6 +30,7 @@ function statusLabelText(s: string): string {
       queued: "Queued",
       blocked_quiet_hours: "Blocked quiet hours",
       blocked_exclusion: "Blocked exclusion",
+      blocked_suppress_badge: "Suppressed badge",
       blocked_test_mode: "Blocked test mode",
       failed: "Failed",
     }[s] || s
@@ -48,8 +50,14 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
   const quietHoursStart = getSetting("quiet_hours_start") ?? "20";
   const quietHoursEnd = getSetting("quiet_hours_end") ?? "7";
   const exclusionKeywords = getSetting("automation_exclusion_keywords") ?? "admin,internal,test";
+  const uat = resolveUatConfig();
+  const uatEnabled = uat.enabled;
+  const uatRedirect = uat.mobile;
   const token = await resolveAccessToken(accountUuid, auth);
   const importedTemplates = token ? await listSmsTemplates(token) : [];
+  const badges = token ? await listBadges(token) : [];
+  const pending = listPendingScheduled(100);
+  const rulesByName = new Map(rules.map((r) => [r.id, r.name]));
 
   const tplJson = JSON.stringify(templates.map((t) => ({ id: t.id, name: t.name, body: t.body })));
   const importedTplJson = JSON.stringify(importedTemplates);
@@ -63,6 +71,22 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
       enabled: !!r.enabled,
       recipient_type: r.recipient_type || "job_contact",
       recipient_number: r.recipient_number ?? "",
+      badge_json: r.badge_json ?? "",
+      suppress_badge_json: r.suppress_badge_json ?? "",
+      schedule_offset_value: r.schedule_offset_value,
+      schedule_offset_unit: r.schedule_offset_unit ?? "days",
+      schedule_anchor: r.schedule_anchor ?? "badge_added",
+    }))
+  );
+  const badgesJson = JSON.stringify(badges);
+  const pendingJson = JSON.stringify(
+    pending.map((p) => ({
+      id: p.id,
+      job_uuid: p.job_uuid,
+      rule_id: p.rule_id,
+      rule_name: rulesByName.get(p.rule_id) || `#${p.rule_id}`,
+      badge_name: p.badge_name,
+      fire_at: p.fire_at,
     }))
   );
   const maxTplId = templates.reduce((m, t) => Math.max(m, t.id), 0);
@@ -79,6 +103,7 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
   <button type="button" class="tab active" data-tab="overview">Overview</button>
   <button type="button" class="tab" data-tab="rules">Automation</button>
   <button type="button" class="tab" data-tab="templates">Templates</button>
+  <button type="button" class="tab" data-tab="pending">Pending</button>
   <button type="button" class="tab" data-tab="log">Log</button>
   <button type="button" class="tab" data-tab="inbox">Inbox</button>
   <button type="button" class="tab" data-tab="analytics">Analytics</button>
@@ -94,7 +119,11 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
     <button type="button" id="refreshDashboard" class="secondary sm">Refresh</button>
   </div>
   <p>Yeastar send: <strong>${env.yeastarSendEnabled ? "enabled" : "dry-run"}</strong></p>
-  ${isTestMode() ? `<p style="background:#fef3c7;border:1px solid #fcd34d;padding:8px 12px;border-radius:6px;font-size:13px;color:#92400e">UAT mode: ${esc(testModeLabel())}</p>` : ""}
+  <p id="uatBanner">${
+    isTestMode()
+      ? `<span style="background:#fef3c7;border:1px solid #fcd34d;padding:8px 12px;border-radius:6px;font-size:13px;color:#92400e;display:inline-block">UAT mode: ${esc(testModeLabel())}</span>`
+      : `<span style="background:#ecfdf5;border:1px solid #a7f3d0;padding:8px 12px;border-radius:6px;font-size:13px;color:#065f46;display:inline-block">Live mode — messages go to customers</span>`
+  }</p>
 </div>
 
 <div id="rules" class="panel">
@@ -148,18 +177,32 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
   </div>
 </div>
 
+<div id="pending" class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>Pending scheduled sends</h2>
+      <p class="muted" style="margin:4px 0 0">Follow-ups waiting to fire. Cancel if the job should not be texted.</p>
+    </div>
+    <button type="button" id="refreshPending" class="secondary sm">Refresh</button>
+  </div>
+  <div class="card table-wrap" style="padding:0">
+    <table><thead><tr><th>Fire at (UTC)</th><th>Job</th><th>Automation</th><th>Badge</th><th></th></tr></thead>
+    <tbody id="pendingList"></tbody></table>
+  </div>
+</div>
+
 <div id="log" class="panel">
   <div class="panel-head">
     <div><h2>Outbound log</h2></div>
     <button type="button" id="refreshLog" class="secondary sm">Refresh</button>
   </div>
   <div class="card table-wrap" style="padding:0">
-    <table><thead><tr><th>When</th><th>To</th><th>Status</th><th>Detail</th><th>Body</th></tr></thead>
+    <table><thead><tr><th>When</th><th>To</th><th>Status</th><th>Automation</th><th>Badge</th><th>Detail</th><th>Body</th></tr></thead>
     <tbody id="logList">${outbound.map((m) => {
       const detail = String(m.provider_response ?? "").trim();
       const detailShort = detail ? (detail.length > 80 ? detail.slice(0, 80) + "…" : detail) : (m.status === "failed" ? "No error recorded" : "");
-      return `<tr><td>${esc(String(m.created_at))}</td><td>${esc(String(m.to_number))}</td><td>${esc(statusLabelText(String(m.status)))}</td><td class="muted" title="${esc(detail)}">${esc(detailShort)}</td><td>${esc(String(m.body).slice(0, 80))}</td></tr>`;
-    }).join("") || '<tr><td colspan="5" class="empty">No outbound messages yet</td></tr>'}</tbody></table>
+      return `<tr><td>${esc(String(m.created_at))}</td><td>${esc(String(m.to_number))}</td><td>${esc(statusLabelText(String(m.status)))}</td><td>${esc(String(m.rule_name ?? ""))}</td><td>${esc(String(m.badge_name ?? ""))}</td><td class="muted" title="${esc(detail)}">${esc(detailShort)}</td><td>${esc(String(m.body).slice(0, 80))}</td></tr>`;
+    }).join("") || '<tr><td colspan="7" class="empty">No outbound messages yet</td></tr>'}</tbody></table>
   </div>
 </div>
 
@@ -188,6 +231,15 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
 
 <div id="settings" class="panel">
   <div class="card">
+    <h3 style="margin:0 0 8px;font-size:15px">Test / UAT mode</h3>
+    <label><input type="checkbox" id="uatEnabled"${uatEnabled ? " checked" : ""} style="width:auto;margin-right:8px" /> Redirect all SMS to a test mobile</label>
+    <label>Redirect number</label>
+    <input id="uatRedirectNumber" value="${esc(uatRedirect)}" placeholder="04xx xxx xxx" />
+    <p class="hint">When on, every automation and Send SMS goes to this number (with a TEST prefix). Save takes effect on the next send — no server restart.</p>
+    <div class="row-actions" style="margin:0 0 16px">
+      <button type="button" class="secondary" id="testUatRedirect">Send UAT test SMS</button>
+    </div>
+    <hr style="border:none;border-top:1px solid #e5e7eb;margin:12px 0" />
     <label>En-route status labels (comma-separated)</label>
     <input id="enRouteStatuses" value="${esc(enRoute)}" />
     <label>Duplicate send cooldown (minutes)</label>
@@ -244,6 +296,38 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
       <label for="ruleStatus">Status becomes</label>
       <input type="text" id="ruleStatus" placeholder="e.g. Quote, Work Order" />
       <p class="hint">Must match the ServiceM8 status label exactly</p>
+    </div>
+    <div id="ruleBadgeWrap" style="display:none">
+      <label>Badges (match any)</label>
+      <div id="ruleBadgeList" class="radio-list" style="max-height:160px;overflow:auto;border:1px solid #e5e7eb;border-radius:6px;padding:8px"></div>
+      <p class="hint">Pick ServiceM8 badges. Multi-select allowed (e.g. Chase payment + Debt Collection).</p>
+    </div>
+    <div id="ruleScheduleWrap" style="display:none">
+      <label for="ruleScheduleAnchor">Start from</label>
+      <select id="ruleScheduleAnchor">
+        <option value="badge_added">Badge added</option>
+        <option value="completed">Job completed</option>
+      </select>
+      <div class="row-actions" style="align-items:flex-end;margin:8px 0">
+        <div style="flex:1">
+          <label for="ruleOffsetValue">Wait</label>
+          <input type="number" id="ruleOffsetValue" min="1" value="1" />
+        </div>
+        <div style="flex:1">
+          <label for="ruleOffsetUnit">Unit</label>
+          <select id="ruleOffsetUnit">
+            <option value="days">Days</option>
+            <option value="weeks">Weeks</option>
+            <option value="months">Months (calendar)</option>
+          </select>
+        </div>
+      </div>
+      <p class="hint">Months use Melbourne calendar dates (3 months from 27 Aug → 27 Nov).</p>
+    </div>
+    <div id="ruleSuppressWrap">
+      <label>Suppress if job has badge</label>
+      <div id="ruleSuppressList" class="radio-list" style="max-height:120px;overflow:auto;border:1px solid #e5e7eb;border-radius:6px;padding:8px"></div>
+      <p class="hint">Optional. Example: Don’t Chase blocks payment-chase automations.</p>
     </div>
     <label for="ruleTemplate">Message</label>
     <select id="ruleTemplate"></select>
@@ -307,6 +391,8 @@ const TRIGGERS = [
   { value: 'status_changed', label: 'Status changed' },
   { value: 'en_route', label: 'Technician en route' },
   { value: 'completed', label: 'Job completed' },
+  { value: 'badge_added', label: 'Badge added' },
+  { value: 'scheduled', label: 'Scheduled send' },
 ];
 const SAMPLE = {
   customerName: 'Jane Smith',
@@ -322,6 +408,8 @@ const SAMPLE = {
 let templates = ${tplJson};
 let importedTemplates = ${importedTplJson};
 let rules = ${rulesJson};
+let sm8Badges = ${badgesJson};
+let pendingRows = ${pendingJson};
 const persistedTplIds = new Set(${JSON.stringify(templates.map((t) => t.id))});
 let nextTplId = ${maxTplId + 1};
 let nextRuleId = ${maxRuleId + 1};
@@ -340,6 +428,9 @@ let outboundRows = ${JSON.stringify(
       to_number: String(m.to_number ?? ""),
       body: String(m.body ?? ""),
       status: String(m.status ?? ""),
+      provider_response: String(m.provider_response ?? ""),
+      rule_name: String(m.rule_name ?? ""),
+      badge_name: String(m.badge_name ?? ""),
     }))
   )};
 let selectedPhoneKey = null;
@@ -370,6 +461,7 @@ function statusLabel(s) {
     queued: 'Queued',
     blocked_quiet_hours: 'Blocked quiet hours',
     blocked_exclusion: 'Blocked exclusion',
+    blocked_suppress_badge: 'Suppressed badge',
     blocked_test_mode: 'Blocked test mode',
     failed: 'Failed'
   };
@@ -465,6 +557,11 @@ function applyDashboardData(data) {
     importedTemplates = data.importedTemplates;
     renderImportedTemplates();
   }
+  if (Array.isArray(data.badges)) sm8Badges = data.badges;
+  if (Array.isArray(data.pending)) {
+    pendingRows = data.pending;
+    renderPending();
+  }
   if (Array.isArray(data.outbound)) {
     outboundRows = data.outbound;
     renderLog(data.outbound);
@@ -476,6 +573,19 @@ function applyDashboardData(data) {
     document.getElementById('analyticsSent7d').textContent = String(data.sent7d);
     const inboundCount = Array.isArray(data.inbound) ? data.inbound.length : inboundRows.length;
     document.getElementById('analyticsInbound').textContent = String(inboundCount);
+  }
+  if (data.uat) updateUatBanner(data.uat);
+}
+
+function updateUatBanner(uat) {
+  const el = document.getElementById('uatBanner');
+  if (!el) return;
+  if (uat.enabled && uat.mobile) {
+    el.innerHTML = '<span style="background:#fef3c7;border:1px solid #fcd34d;padding:8px 12px;border-radius:6px;font-size:13px;color:#92400e;display:inline-block">UAT mode: mobile → ' + escHtml(uat.mobile) + '</span>';
+  } else if (uat.enabled) {
+    el.innerHTML = '<span style="background:#fef3c7;border:1px solid #fcd34d;padding:8px 12px;border-radius:6px;font-size:13px;color:#92400e;display:inline-block">UAT on — set a redirect number</span>';
+  } else {
+    el.innerHTML = '<span style="background:#ecfdf5;border:1px solid #a7f3d0;padding:8px 12px;border-radius:6px;font-size:13px;color:#065f46;display:inline-block">Live mode — messages go to customers</span>';
   }
 }
 
@@ -496,14 +606,45 @@ async function refreshDashboardData() {
 function renderLog(rows) {
   const el = document.getElementById('logList');
   if (!rows.length) {
-    el.innerHTML = '<tr><td colspan="5" class="empty">No outbound messages yet</td></tr>';
+    el.innerHTML = '<tr><td colspan="7" class="empty">No outbound messages yet</td></tr>';
     return;
   }
   el.innerHTML = rows.map((m) =>
     '<tr><td>' + escHtml(m.created_at) + '</td><td>' + escHtml(m.to_number) + '</td><td>' + escHtml(statusLabel(m.status)) +
+    '</td><td>' + escHtml(m.rule_name || '') + '</td><td>' + escHtml(m.badge_name || '') +
     '</td><td class="muted" title="' + escHtml(String(m.provider_response || '')) + '">' + escHtml(logDetailText(m)) +
     '</td><td>' + escHtml(String(m.body).slice(0, 80)) + '</td></tr>'
   ).join('');
+}
+
+function renderPending() {
+  const el = document.getElementById('pendingList');
+  if (!el) return;
+  if (!pendingRows.length) {
+    el.innerHTML = '<tr><td colspan="5" class="empty">No pending scheduled sends</td></tr>';
+    return;
+  }
+  el.innerHTML = pendingRows.map((p) =>
+    '<tr><td>' + escHtml(p.fire_at) + '</td><td>' + escHtml(String(p.job_uuid || '').slice(0, 8)) + '…</td><td>' +
+    escHtml(p.rule_name || '') + '</td><td>' + escHtml(p.badge_name || '') +
+    '</td><td><button type="button" class="danger sm cancel-pending" data-id="' + p.id + '">Cancel</button></td></tr>'
+  ).join('');
+  el.querySelectorAll('.cancel-pending').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = Number(btn.getAttribute('data-id'));
+      try {
+        const res = parseInvoke(await invoke('sms_dashboard_save', { section: 'cancel_scheduled', id }));
+        if (res && res.ok) {
+          pendingRows = pendingRows.filter((p) => p.id !== id);
+          renderPending();
+        } else {
+          alert(JSON.stringify(res));
+        }
+      } catch (e) {
+        alert(String(e));
+      }
+    });
+  });
 }
 
 function buildConversations() {
@@ -655,17 +796,75 @@ function whenLabel(r) {
   }
   if (r.trigger_type === 'en_route') return 'When the technician is en route';
   if (r.trigger_type === 'completed') return 'When a job is completed';
+  if (r.trigger_type === 'badge_added') {
+    const names = parseBadges(r.badge_json).map((b) => b.name).filter(Boolean);
+    return names.length ? 'When badge added: ' + names.join(', ') : 'When a selected badge is added';
+  }
+  if (r.trigger_type === 'scheduled') {
+    const n = r.schedule_offset_value || '?';
+    const u = r.schedule_offset_unit || 'days';
+    const anchor = r.schedule_anchor === 'completed' ? 'job completed' : 'badge added';
+    const names = parseBadges(r.badge_json).map((b) => b.name).filter(Boolean);
+    const badgeBit = r.schedule_anchor === 'completed' ? '' : (names.length ? ' (' + names.join(', ') + ')' : '');
+    return 'Scheduled ' + n + ' ' + u + ' after ' + anchor + badgeBit;
+  }
   return 'When a job is created';
 }
 
 function ruleSummary(r) {
   const tpl = templates.find((t) => t.id === r.template_id);
   const msg = tpl ? tpl.name : 'template';
-  return whenLabel(r) + ' → send “' + msg + '” to ' + recipientLabel(r);
+  const suppress = parseBadges(r.suppress_badge_json).map((b) => b.name).filter(Boolean);
+  const base = whenLabel(r) + ' → send “' + msg + '” to ' + recipientLabel(r);
+  return suppress.length ? base + ' (suppress: ' + suppress.join(', ') + ')' : base;
 }
 
 function statusMatchEnabled(trigger) {
   return trigger === 'status_changed';
+}
+
+function badgeMatchEnabled(trigger) {
+  return trigger === 'badge_added' || trigger === 'scheduled';
+}
+
+function scheduleEnabled(trigger) {
+  return trigger === 'scheduled';
+}
+
+function parseBadges(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  try {
+    const data = JSON.parse(raw);
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function selectedBadgeJson(listId) {
+  const root = document.getElementById(listId);
+  if (!root) return '[]';
+  const out = [];
+  root.querySelectorAll('input[type="checkbox"]:checked').forEach((el) => {
+    out.push({ uuid: el.value, name: el.getAttribute('data-name') || el.value });
+  });
+  return JSON.stringify(out);
+}
+
+function fillBadgeCheckboxes(listId, selectedJson) {
+  const root = document.getElementById(listId);
+  if (!root) return;
+  const selected = new Set(parseBadges(selectedJson).map((b) => String(b.uuid || '').toLowerCase()));
+  if (!sm8Badges.length) {
+    root.innerHTML = '<p class="muted" style="margin:0">No badges loaded — reconnect OAuth if this persists.</p>';
+    return;
+  }
+  root.innerHTML = sm8Badges.map((b) =>
+    '<label style="display:block"><input type="checkbox" value="' + escHtml(b.uuid) + '" data-name="' + escHtml(b.name) + '"' +
+    (selected.has(String(b.uuid).toLowerCase()) ? ' checked' : '') + ' style="width:auto;margin-right:8px" />' +
+    escHtml(b.name) + '</label>'
+  ).join('');
 }
 
 function selectedRecipientType() {
@@ -676,8 +875,15 @@ function selectedRecipientType() {
 function syncRuleModalFields() {
   const trigger = document.getElementById('ruleTrigger').value;
   const statusWrap = document.getElementById('ruleStatusWrap');
+  const badgeWrap = document.getElementById('ruleBadgeWrap');
+  const scheduleWrap = document.getElementById('ruleScheduleWrap');
   const customWrap = document.getElementById('ruleCustomWrap');
   if (statusWrap) statusWrap.style.display = statusMatchEnabled(trigger) ? 'block' : 'none';
+  if (badgeWrap) {
+    const showBadge = badgeMatchEnabled(trigger) && !(trigger === 'scheduled' && document.getElementById('ruleScheduleAnchor').value === 'completed');
+    badgeWrap.style.display = showBadge ? 'block' : 'none';
+  }
+  if (scheduleWrap) scheduleWrap.style.display = scheduleEnabled(trigger) ? 'block' : 'none';
   if (customWrap) customWrap.style.display = selectedRecipientType() === 'custom' ? 'block' : 'none';
   const tpl = templates.find((t) => t.id === Number(document.getElementById('ruleTemplate').value));
   const preview = document.querySelector('#rulePreview span');
@@ -695,6 +901,11 @@ function openRuleModal(id) {
   ).join('');
   document.getElementById('ruleStatus').value = rule ? (rule.status_match || '') : '';
   document.getElementById('ruleTemplate').innerHTML = templateOptions(rule ? rule.template_id : (templates[0] && templates[0].id));
+  document.getElementById('ruleScheduleAnchor').value = rule && rule.schedule_anchor ? rule.schedule_anchor : 'badge_added';
+  document.getElementById('ruleOffsetValue').value = rule && rule.schedule_offset_value ? rule.schedule_offset_value : 1;
+  document.getElementById('ruleOffsetUnit').value = rule && rule.schedule_offset_unit ? rule.schedule_offset_unit : 'days';
+  fillBadgeCheckboxes('ruleBadgeList', rule ? rule.badge_json : '[]');
+  fillBadgeCheckboxes('ruleSuppressList', rule ? rule.suppress_badge_json : '[]');
   const type = rule && rule.recipient_type ? rule.recipient_type : 'job_contact';
   document.querySelectorAll('input[name="ruleRecipient"]').forEach((el) => {
     el.checked = el.value === type;
@@ -723,6 +934,18 @@ function applyRuleModal() {
     alert('Enter a mobile number, or choose customer / company contact.');
     return false;
   }
+  const badge_json = badgeMatchEnabled(trigger_type) && !(trigger_type === 'scheduled' && document.getElementById('ruleScheduleAnchor').value === 'completed')
+    ? selectedBadgeJson('ruleBadgeList')
+    : '[]';
+  if ((trigger_type === 'badge_added' || (trigger_type === 'scheduled' && document.getElementById('ruleScheduleAnchor').value === 'badge_added')) && parseBadges(badge_json).length === 0) {
+    alert('Select at least one badge.');
+    return false;
+  }
+  const schedule_offset_value = scheduleEnabled(trigger_type) ? Number(document.getElementById('ruleOffsetValue').value) || 0 : null;
+  if (scheduleEnabled(trigger_type) && schedule_offset_value < 1) {
+    alert('Enter a wait of at least 1.');
+    return false;
+  }
   const payload = {
     name,
     trigger_type,
@@ -730,6 +953,11 @@ function applyRuleModal() {
     template_id: Number(document.getElementById('ruleTemplate').value) || (templates[0] && templates[0].id) || 1,
     recipient_type,
     recipient_number: recipient_type === 'custom' ? recipient_number : '',
+    badge_json,
+    suppress_badge_json: selectedBadgeJson('ruleSuppressList'),
+    schedule_offset_value,
+    schedule_offset_unit: scheduleEnabled(trigger_type) ? document.getElementById('ruleOffsetUnit').value : '',
+    schedule_anchor: scheduleEnabled(trigger_type) ? document.getElementById('ruleScheduleAnchor').value : '',
   };
   if (editingRuleId == null) {
     rules.push({ id: nextRuleId++, enabled: true, ...payload });
@@ -746,6 +974,7 @@ function setupRuleModal() {
   const modal = document.getElementById('ruleModal');
   if (!modal) return;
   on('ruleTrigger', 'change', syncRuleModalFields);
+  on('ruleScheduleAnchor', 'change', syncRuleModalFields);
   on('ruleTemplate', 'change', syncRuleModalFields);
   modal.querySelectorAll('input[name="ruleRecipient"]').forEach((el) => {
     el.addEventListener('change', syncRuleModalFields);
@@ -1058,6 +1287,7 @@ function initDashboard() {
     on('saveRules', 'click', async () => {
       try {
         const payload = rules.map((r, i) => ({
+          id: r.id,
           name: r.name,
           trigger_type: r.trigger_type,
           status_match: r.status_match || null,
@@ -1066,6 +1296,11 @@ function initDashboard() {
           sort_order: i,
           recipient_type: r.recipient_type || 'job_contact',
           recipient_number: r.recipient_number || null,
+          badge_json: r.badge_json || null,
+          suppress_badge_json: r.suppress_badge_json || null,
+          schedule_offset_value: r.schedule_offset_value ?? null,
+          schedule_offset_unit: r.schedule_offset_unit || null,
+          schedule_anchor: r.schedule_anchor || null,
         }));
         const res = parseInvoke(await invoke('sms_dashboard_save', { section: 'rules', rules: payload }));
         if (res && res.ok !== false) {
@@ -1085,6 +1320,12 @@ function initDashboard() {
 
     on('saveSettings', 'click', async () => {
       try {
+        const uatOn = document.getElementById('uatEnabled').checked;
+        const uatNumber = document.getElementById('uatRedirectNumber').value.replace(/\\s+/g, '');
+        if (uatOn && !uatNumber) {
+          document.getElementById('settingsOut').textContent = 'UAT is on — enter a redirect mobile number.';
+          return;
+        }
         const res = parseInvoke(await invoke('sms_dashboard_save', {
           section: 'settings',
           en_route_statuses: document.getElementById('enRouteStatuses').value,
@@ -1093,8 +1334,11 @@ function initDashboard() {
           quiet_hours_start: document.getElementById('quietHoursStart').value,
           quiet_hours_end: document.getElementById('quietHoursEnd').value,
           automation_exclusion_keywords: document.getElementById('automationExclusionKeywords').value,
+          uat_enabled: uatOn ? '1' : '0',
+          uat_redirect_number: uatNumber,
         }));
         document.getElementById('settingsOut').textContent = JSON.stringify(res);
+        if (res && res.uat) updateUatBanner(res.uat);
       } catch (e) {
         document.getElementById('settingsOut').textContent = String(e);
       }
@@ -1109,9 +1353,21 @@ function initDashboard() {
       }
     });
 
+    on('testUatRedirect', 'click', async () => {
+      try {
+        const res = parseInvoke(await invoke('sms_test_uat_redirect', {}));
+        document.getElementById('settingsOut').textContent = JSON.stringify(res);
+        if (res && res.ok) await refreshDashboardData();
+      } catch (e) {
+        document.getElementById('settingsOut').textContent = String(e);
+      }
+    });
+
     on('refreshDashboard', 'click', () => { void refreshDashboardData(); });
     on('refreshLog', 'click', () => { void refreshDashboardData(); });
     on('refreshInbox', 'click', () => { void refreshDashboardData(); });
+    on('refreshPending', 'click', () => { void refreshDashboardData(); });
+    renderPending();
   } catch (e) {
     console.error('dashboard init', e);
   }

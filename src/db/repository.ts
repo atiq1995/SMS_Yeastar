@@ -22,6 +22,23 @@ export type RuleRow = {
   sort_order: number;
   recipient_type: string;
   recipient_number: string | null;
+  badge_json: string | null;
+  suppress_badge_json: string | null;
+  schedule_offset_value: number | null;
+  schedule_offset_unit: string | null;
+  schedule_anchor: string | null;
+};
+
+export type ScheduledSendRow = {
+  id: number;
+  account_uuid: string | null;
+  job_uuid: string;
+  rule_id: number;
+  badge_uuid: string | null;
+  badge_name: string | null;
+  fire_at: string;
+  status: string;
+  created_at: string;
 };
 
 export function getSetting(key: string): string | undefined {
@@ -55,10 +72,31 @@ export function listRules(): RuleRow[] {
     ...r,
     recipient_type: r.recipient_type || "job_contact",
     recipient_number: r.recipient_number ?? null,
+    badge_json: r.badge_json ?? null,
+    suppress_badge_json: r.suppress_badge_json ?? null,
+    schedule_offset_value: r.schedule_offset_value ?? null,
+    schedule_offset_unit: r.schedule_offset_unit ?? null,
+    schedule_anchor: r.schedule_anchor ?? null,
   }));
 }
 
+export function getRule(id: number): RuleRow | undefined {
+  const row = db().prepare("SELECT * FROM rules WHERE id = ?").get(id) as RuleRow | undefined;
+  if (!row) return undefined;
+  return {
+    ...row,
+    recipient_type: row.recipient_type || "job_contact",
+    recipient_number: row.recipient_number ?? null,
+    badge_json: row.badge_json ?? null,
+    suppress_badge_json: row.suppress_badge_json ?? null,
+    schedule_offset_value: row.schedule_offset_value ?? null,
+    schedule_offset_unit: row.schedule_offset_unit ?? null,
+    schedule_anchor: row.schedule_anchor ?? null,
+  };
+}
+
 export type RuleInput = {
+  id?: number;
   name: string;
   trigger_type: string;
   status_match?: string | null;
@@ -67,19 +105,69 @@ export type RuleInput = {
   sort_order?: number;
   recipient_type?: string | null;
   recipient_number?: string | null;
+  badge_json?: string | null;
+  suppress_badge_json?: string | null;
+  schedule_offset_value?: number | null;
+  schedule_offset_unit?: string | null;
+  schedule_anchor?: string | null;
 };
 export function replaceRules(rules: RuleInput[]): void {
   const d = db();
   const tx = d.transaction(() => {
-    d.prepare("DELETE FROM rules").run();
+    const keepIds = rules.map((r) => r.id).filter((id): id is number => typeof id === "number" && id > 0);
+    if (keepIds.length) {
+      d.prepare(`DELETE FROM rules WHERE id NOT IN (${keepIds.map(() => "?").join(",")})`).run(...keepIds);
+    } else {
+      d.prepare("DELETE FROM rules").run();
+    }
+    const upd = d.prepare(
+      `UPDATE rules SET
+        name=?, trigger_type=?, status_match=?, template_id=?, enabled=?, sort_order=?,
+        recipient_type=?, recipient_number=?, badge_json=?, suppress_badge_json=?,
+        schedule_offset_value=?, schedule_offset_unit=?, schedule_anchor=?
+       WHERE id=?`
+    );
     const ins = d.prepare(
-      "INSERT INTO rules(name, trigger_type, status_match, template_id, enabled, sort_order, recipient_type, recipient_number) VALUES(?,?,?,?,?,?,?,?)"
+      `INSERT INTO rules(
+        name, trigger_type, status_match, template_id, enabled, sort_order,
+        recipient_type, recipient_number, badge_json, suppress_badge_json,
+        schedule_offset_value, schedule_offset_unit, schedule_anchor
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`
     );
     rules.forEach((r, i) => {
       const type = r.recipient_type === "company_primary" || r.recipient_type === "custom" ? r.recipient_type : "job_contact";
       const number = type === "custom" ? (r.recipient_number?.replace(/\s+/g, "") || null) : null;
-      ins.run(r.name, r.trigger_type, r.status_match ?? null, r.template_id, r.enabled ?? 1, r.sort_order ?? i, type, number);
+      const unit =
+        r.schedule_offset_unit === "days" || r.schedule_offset_unit === "weeks" || r.schedule_offset_unit === "months"
+          ? r.schedule_offset_unit
+          : null;
+      const anchor = r.schedule_anchor === "badge_added" || r.schedule_anchor === "completed" ? r.schedule_anchor : null;
+      const vals = [
+        r.name,
+        r.trigger_type,
+        r.status_match ?? null,
+        r.template_id,
+        r.enabled ?? 1,
+        r.sort_order ?? i,
+        type,
+        number,
+        r.badge_json ?? null,
+        r.suppress_badge_json ?? null,
+        r.schedule_offset_value ?? null,
+        unit,
+        anchor,
+      ] as const;
+      if (typeof r.id === "number" && r.id > 0) {
+        upd.run(...vals, r.id);
+      } else {
+        ins.run(...vals);
+      }
     });
+    // Drop pending rows whose rule was removed
+    d.prepare(
+      `UPDATE scheduled_sends SET status = 'cancelled'
+       WHERE status = 'pending' AND rule_id NOT IN (SELECT id FROM rules)`
+    ).run();
   });
   tx();
 }
@@ -122,10 +210,16 @@ export function insertOutbound(row: {
   status: string;
   provider_response?: string;
   idempotency_key?: string;
+  rule_id?: number | null;
+  rule_name?: string | null;
+  badge_name?: string | null;
 }): number {
   const r = db()
     .prepare(
-      "INSERT INTO outbound_messages(account_uuid, job_uuid, to_number, body, status, provider_response, idempotency_key) VALUES(?,?,?,?,?,?,?)"
+      `INSERT INTO outbound_messages(
+        account_uuid, job_uuid, to_number, body, status, provider_response, idempotency_key,
+        rule_id, rule_name, badge_name
+      ) VALUES(?,?,?,?,?,?,?,?,?,?)`
     )
     .run(
       row.account_uuid ?? null,
@@ -134,7 +228,10 @@ export function insertOutbound(row: {
       row.body,
       row.status,
       row.provider_response ?? null,
-      row.idempotency_key ?? null
+      row.idempotency_key ?? null,
+      row.rule_id ?? null,
+      row.rule_name ?? null,
+      row.badge_name ?? null
     );
   return Number(r.lastInsertRowid);
 }
@@ -184,6 +281,9 @@ export function claimOutboundSend(
     to_number: string;
     body: string;
     idempotency_key?: string;
+    rule_id?: number | null;
+    rule_name?: string | null;
+    badge_name?: string | null;
   },
   window_minutes: number
 ): number | null {
@@ -347,4 +447,104 @@ export function seedDefaults(database?: Database.Database): void {
     insRule.run(rule.name, rule.trigger_type, rule.status_match ?? null, tid, 1, i);
   });
   d.prepare("INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)").run("en_route_statuses", "En Route,Dispatched");
+}
+
+export function getJobBadgeSnapshot(jobUuid: string): string[] {
+  const row = db().prepare("SELECT badge_uuids FROM job_badge_snapshot WHERE job_uuid = ?").get(jobUuid) as
+    | { badge_uuids: string }
+    | undefined;
+  if (!row?.badge_uuids) return [];
+  try {
+    const parsed = JSON.parse(row.badge_uuids) as unknown;
+    return Array.isArray(parsed) ? parsed.map((x) => String(x)) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function setJobBadgeSnapshot(jobUuid: string, badgeUuids: string[]): void {
+  db()
+    .prepare(
+      `INSERT INTO job_badge_snapshot(job_uuid, badge_uuids, updated_at) VALUES(?,?,datetime('now'))
+       ON CONFLICT(job_uuid) DO UPDATE SET badge_uuids = excluded.badge_uuids, updated_at = datetime('now')`
+    )
+    .run(jobUuid, JSON.stringify(badgeUuids));
+}
+
+export function upsertScheduledSend(row: {
+  account_uuid?: string;
+  job_uuid: string;
+  rule_id: number;
+  badge_uuid?: string | null;
+  badge_name?: string | null;
+  fire_at: string;
+}): void {
+  db()
+    .prepare(
+      `INSERT INTO scheduled_sends(account_uuid, job_uuid, rule_id, badge_uuid, badge_name, fire_at, status)
+       VALUES(?,?,?,?,?,?, 'pending')
+       ON CONFLICT(job_uuid, rule_id) DO UPDATE SET
+         account_uuid = excluded.account_uuid,
+         badge_uuid = excluded.badge_uuid,
+         badge_name = excluded.badge_name,
+         fire_at = excluded.fire_at,
+         status = 'pending',
+         created_at = datetime('now')`
+    )
+    .run(
+      row.account_uuid ?? null,
+      row.job_uuid,
+      row.rule_id,
+      row.badge_uuid ?? null,
+      row.badge_name ?? null,
+      row.fire_at
+    );
+}
+
+export function cancelScheduledForJobRule(jobUuid: string, ruleId: number, reason = "cancelled"): void {
+  db()
+    .prepare(`UPDATE scheduled_sends SET status = ? WHERE job_uuid = ? AND rule_id = ? AND status = 'pending'`)
+    .run(reason, jobUuid, ruleId);
+}
+
+export function cancelScheduledByBadge(jobUuid: string, badgeUuid: string): void {
+  db()
+    .prepare(
+      `UPDATE scheduled_sends SET status = 'cancelled'
+       WHERE job_uuid = ? AND status = 'pending' AND lower(badge_uuid) = lower(?)`
+    )
+    .run(jobUuid, badgeUuid);
+}
+
+export function listDueScheduled(nowIso: string, limit = 50): ScheduledSendRow[] {
+  return db()
+    .prepare(
+      `SELECT * FROM scheduled_sends
+       WHERE status = 'pending' AND fire_at <= ?
+       ORDER BY fire_at ASC LIMIT ?`
+    )
+    .all(nowIso, limit) as ScheduledSendRow[];
+}
+
+export function listPendingScheduled(limit = 100): ScheduledSendRow[] {
+  return db()
+    .prepare(
+      `SELECT * FROM scheduled_sends WHERE status = 'pending' ORDER BY fire_at ASC LIMIT ?`
+    )
+    .all(limit) as ScheduledSendRow[];
+}
+
+export function updateScheduledStatus(id: number, status: string, fireAt?: string): void {
+  if (fireAt) {
+    db().prepare(`UPDATE scheduled_sends SET status = ?, fire_at = ? WHERE id = ?`).run(status, fireAt, id);
+    return;
+  }
+  db().prepare(`UPDATE scheduled_sends SET status = ? WHERE id = ?`).run(status, id);
+}
+
+export function cancelScheduledById(id: number): boolean {
+  const r = db()
+    .prepare(`UPDATE scheduled_sends SET status = 'cancelled' WHERE id = ? AND status = 'pending'`)
+    .run(id);
+  return r.changes > 0;
 }

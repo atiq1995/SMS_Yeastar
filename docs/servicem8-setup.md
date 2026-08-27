@@ -3,7 +3,7 @@
 For a full step-by-step testing walkthrough (EC2, temporary HTTPS without a client domain, Yeastar, OAuth), see **[testing-guide.md](testing-guide.md)**.
 
 1. Create a **Self-Hosted Web Service Function** add-on in the ServiceM8 Developer portal (same as “Web Service Hosted” in API docs).
-2. Upload `manifest.json` from this repo (menu **SMS Dashboard**, job action **Send SMS**, webhooks `job.status` + `job.uuid` / `generated_job_id` for new jobs).
+2. Upload `manifest.json` from this repo (menu **SMS Dashboard**, job action **Send SMS**, webhooks `job.status` + `job.uuid` / `generated_job_id` for new jobs + `job.badges` for badge automations).
 3. Set the callback URL to `https://YOUR_DOMAIN/addon` (must be HTTPS in production).
 4. Copy **App ID** and **App Secret** into server `.env` (`SERVICEM8_APP_ID`, `SERVICEM8_APP_SECRET`).
 5. Set `SERVICEM8_REDIRECT_URI` to `https://YOUR_DOMAIN/oauth/callback` and the same URI in the developer portal.

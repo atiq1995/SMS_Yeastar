@@ -13,17 +13,19 @@ import {
   listOutbound,
   listInbound,
   countOutboundSince,
+  listPendingScheduled,
+  cancelScheduledById,
 } from "../db/repository.js";
 import { sendSms } from "../yeastar/send.js";
 import { env } from "../config/env.js";
 import { processJobEvent } from "../workers/process-event.js";
-import { getJob, getCompany, getLocationPhone1, getNextBookingContext, getStaff, jobCompanyUuid, createJobNote, createSmsTemplate, listSmsTemplates, getVendorName } from "./api.js";
+import { getJob, getCompany, getLocationPhone1, getNextBookingContext, getStaff, jobCompanyUuid, createJobNote, createSmsTemplate, listSmsTemplates, getVendorName, listBadges } from "./api.js";
 import { resolveAccessToken } from "./oauth.js";
 import { renderSmsBody } from "../engine/templates.js";
 import { buildJobTemplateContext, buildSm8Map } from "../engine/job-context.js";
 import { analyzeTemplateFields } from "../engine/field-support.js";
 import { enqueueSend } from "../yeastar/queue.js";
-import { guardOutbound } from "../yeastar/guard.js";
+import { guardOutbound, resolveUatConfig } from "../yeastar/guard.js";
 import { yeastarResultDetail } from "../yeastar/result.js";
 
 function accountUuid(payload: AddonJwt, args: Record<string, unknown>): string {
@@ -106,13 +108,20 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
     if (event === "sms_dashboard_data") {
       const token = await resolveAccessToken(acct, payload.auth);
       const since = new Date(Date.now() - 7 * 864e5).toISOString();
+      const rulesById = new Map(listRules().map((r) => [r.id, r.name]));
       sendInvokeJson(res, {
         ok: true,
         templates: listTemplates().map((t) => ({ id: t.id, name: t.name, body: t.body })),
         importedTemplates: token ? await listSmsTemplates(token) : [],
+        badges: token ? await listBadges(token) : [],
         outbound: listOutbound(50),
         inbound: listInbound(50),
+        pending: listPendingScheduled(100).map((p) => ({
+          ...p,
+          rule_name: rulesById.get(p.rule_id) || `#${p.rule_id}`,
+        })),
         sent7d: countOutboundSince(since),
+        uat: resolveUatConfig(),
       });
       return;
     }
@@ -135,7 +144,20 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
         if (typeof args.automation_exclusion_keywords === "string") {
           setSetting("automation_exclusion_keywords", args.automation_exclusion_keywords);
         }
-        sendInvokeJson(res, { ok: true });
+        if (typeof args.uat_enabled === "string") {
+          setSetting("uat_enabled", args.uat_enabled === "1" ? "1" : "0");
+          setSetting("uat_configured", "1");
+        }
+        if (typeof args.uat_redirect_number === "string") {
+          setSetting("uat_redirect_number", args.uat_redirect_number.replace(/\s+/g, ""));
+          setSetting("uat_configured", "1");
+        }
+        sendInvokeJson(res, { ok: true, uat: resolveUatConfig() });
+        return;
+      }
+      if (section === "cancel_scheduled") {
+        const id = typeof args.id === "number" ? args.id : Number(args.id);
+        sendInvokeJson(res, { ok: Number.isFinite(id) && cancelScheduledById(id) });
         return;
       }
       if (section === "templates" && Array.isArray(args.templates)) {
@@ -167,6 +189,7 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
       if (section === "rules" && Array.isArray(args.rules)) {
         replaceRules(
           (args.rules as {
+            id?: number;
             name: string;
             trigger_type: string;
             status_match?: string;
@@ -174,7 +197,13 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
             enabled?: number;
             recipient_type?: string;
             recipient_number?: string;
+            badge_json?: string | null;
+            suppress_badge_json?: string | null;
+            schedule_offset_value?: number | null;
+            schedule_offset_unit?: string | null;
+            schedule_anchor?: string | null;
           }[]).map((r, i) => ({
+            id: r.id,
             name: r.name,
             trigger_type: r.trigger_type,
             status_match: r.status_match ?? null,
@@ -183,6 +212,11 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
             sort_order: i,
             recipient_type: r.recipient_type ?? "job_contact",
             recipient_number: r.recipient_number ?? null,
+            badge_json: r.badge_json ?? null,
+            suppress_badge_json: r.suppress_badge_json ?? null,
+            schedule_offset_value: r.schedule_offset_value ?? null,
+            schedule_offset_unit: r.schedule_offset_unit ?? null,
+            schedule_anchor: r.schedule_anchor ?? null,
           }))
         );
         sendInvokeJson(res, {
@@ -196,6 +230,11 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
             enabled: !!r.enabled,
             recipient_type: r.recipient_type || "job_contact",
             recipient_number: r.recipient_number ?? "",
+            badge_json: r.badge_json ?? "",
+            suppress_badge_json: r.suppress_badge_json ?? "",
+            schedule_offset_value: r.schedule_offset_value,
+            schedule_offset_unit: r.schedule_offset_unit ?? "",
+            schedule_anchor: r.schedule_anchor ?? "",
           })),
         });
         return;
@@ -205,13 +244,50 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
     }
     if (event === "sms_test_yeastar") {
       try {
-        const dest = env.smsTestMobile || "0000000000";
+        const uat = resolveUatConfig();
+        const dest = (typeof args.to_number === "string" && args.to_number.trim()) || uat.mobile || env.smsTestMobile || "0000000000";
         const result = await sendSms(dest, "SMS dashboard connection test");
         sendInvokeJson(res, {
           ok: result.accepted,
           dryRun: result.dryRun,
           detail: yeastarResultDetail(result),
           to: dest,
+        });
+      } catch (err) {
+        sendInvokeJson(res, { ok: false, error: String(err) });
+      }
+      return;
+    }
+    if (event === "sms_test_uat_redirect") {
+      try {
+        const uat = resolveUatConfig();
+        if (!uat.enabled || !uat.mobile) {
+          sendInvokeJson(res, { ok: false, error: "Turn on UAT and set a redirect number, then Save settings." });
+          return;
+        }
+        const guarded = guardOutbound("0400000000", "UAT redirect test from SMS Dashboard", undefined);
+        if (!guarded.ok) {
+          sendInvokeJson(res, { ok: false, error: guarded.reason });
+          return;
+        }
+        const result = await enqueueSend(guarded.destination, guarded.message);
+        insertOutbound({
+          to_number: guarded.destination,
+          body: guarded.message,
+          status: result.accepted
+            ? result.dryRun
+              ? "test_redirected_dry_run"
+              : "test_redirected"
+            : "failed",
+          provider_response: yeastarResultDetail(result),
+          rule_name: "UAT test",
+        });
+        sendInvokeJson(res, {
+          ok: result.accepted,
+          dryRun: result.dryRun,
+          redirected: guarded.redirected,
+          to: guarded.destination,
+          detail: yeastarResultDetail(result),
         });
       } catch (err) {
         sendInvokeJson(res, { ok: false, error: String(err) });
