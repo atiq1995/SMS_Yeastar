@@ -210,7 +210,7 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
   <div class="panel-head">
     <div>
       <h2>Inbox</h2>
-      <p class="muted" style="margin:4px 0 0">Numbers on the left · full conversation on the right</p>
+      <p class="muted" style="margin:4px 0 0">Numbers on the left · reply from the thread on the right</p>
     </div>
     <button type="button" id="refreshInbox" class="secondary sm">Refresh</button>
   </div>
@@ -431,9 +431,11 @@ let outboundRows = ${JSON.stringify(
       provider_response: String(m.provider_response ?? ""),
       rule_name: String(m.rule_name ?? ""),
       badge_name: String(m.badge_name ?? ""),
+      job_uuid: String(m.job_uuid ?? ""),
     }))
   )};
 let selectedPhoneKey = null;
+let inboxReplySending = false;
 
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
@@ -692,6 +694,64 @@ function formatInboxTime(at) {
   return d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' + t;
 }
 
+function jobUuidForPhoneKey(key) {
+  for (const m of outboundRows) {
+    if (phoneKey(m.to_number) !== key) continue;
+    const id = String(m.job_uuid || '').trim();
+    if (id) return id;
+  }
+  return '';
+}
+
+function inboxReplyBar(toNumber) {
+  return '<div class="inbox-reply">' +
+    '<div class="inbox-reply-row">' +
+    '<textarea id="inboxReplyText" rows="2" maxlength="612" placeholder="Type a reply…"></textarea>' +
+    '<button type="button" id="inboxReplySend"' + (inboxReplySending ? ' disabled' : '') + '>Send</button>' +
+    '</div>' +
+    '<p class="hint">Enter to send · Shift+Enter for new line</p>' +
+    '</div>';
+}
+
+function bindInboxReply(key, toNumber) {
+  const input = document.getElementById('inboxReplyText');
+  const btn = document.getElementById('inboxReplySend');
+  if (!input || !btn) return;
+  const send = async () => {
+    const message = input.value.trim();
+    if (!message || inboxReplySending) return;
+    inboxReplySending = true;
+    btn.disabled = true;
+    try {
+      const payload = { to_number: toNumber, message };
+      const jobUuid = jobUuidForPhoneKey(key);
+      if (jobUuid) payload.job_uuid = jobUuid;
+      const res = parseInvoke(await invoke('sms_inbox_reply', payload));
+      if (res && res.ok !== false) {
+        input.value = '';
+        await refreshDashboardData();
+        selectedPhoneKey = key;
+        renderInbox();
+      } else {
+        alert(res.error || JSON.stringify(res));
+      }
+    } catch (e) {
+      alert(String(e));
+    } finally {
+      inboxReplySending = false;
+      if (btn) btn.disabled = false;
+    }
+  };
+  btn.addEventListener('click', () => { void send(); });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      void send();
+    }
+  });
+  input.focus();
+}
+
 function renderInboxThread(key) {
   const el = document.getElementById('inboxThread');
   if (!el) return;
@@ -701,28 +761,28 @@ function renderInboxThread(key) {
   }
   const conversations = buildConversations();
   const conv = conversations.find((c) => c.key === key);
+  const toNumber = conv ? conv.number : key;
   const msgs = messagesForKey(key);
   const header =
     '<div class="inbox-thread-head">' +
     '<div>' +
-    '<strong>' + escHtml(formatPhoneDisplay(conv ? conv.number : key)) + '</strong>' +
+    '<strong>' + escHtml(formatPhoneDisplay(toNumber)) + '</strong>' +
     '<span class="muted">' + msgs.length + ' message' + (msgs.length === 1 ? '' : 's') + '</span>' +
     '</div></div>';
-  if (!msgs.length) {
-    el.innerHTML = header + '<div class="inbox-thread-empty empty">No messages for this number</div>';
-    return;
-  }
-  // WhatsApp-style: oldest → newest top-to-bottom; open scrolled to latest (bottom)
-  el.innerHTML = header + '<div class="inbox-thread-list" id="inboxThreadList">' + msgs.map((m) =>
-    '<div class="msg ' + m.dir + '">' +
-    '<div class="msg-bubble">' + escHtml(m.body) + '</div>' +
-    '<div class="msg-meta">' + (m.dir === 'out' ? 'Sent' : 'Received') + ' · ' + escHtml(formatInboxTime(m.at)) + '</div>' +
-    '</div>'
-  ).join('') + '</div>';
+  const listHtml = msgs.length
+    ? '<div class="inbox-thread-list" id="inboxThreadList">' + msgs.map((m) =>
+      '<div class="msg ' + m.dir + '">' +
+      '<div class="msg-bubble">' + escHtml(m.body) + '</div>' +
+      '<div class="msg-meta">' + (m.dir === 'out' ? 'Sent' : 'Received') + ' · ' + escHtml(formatInboxTime(m.at)) + '</div>' +
+      '</div>'
+    ).join('') + '</div>'
+    : '<div class="inbox-thread-empty empty">No messages yet — send a reply below</div>';
+  el.innerHTML = header + listHtml + inboxReplyBar(toNumber);
   const list = document.getElementById('inboxThreadList');
   if (list) {
     requestAnimationFrame(() => { list.scrollTop = list.scrollHeight; });
   }
+  bindInboxReply(key, toNumber);
 }
 
 function renderInbox() {

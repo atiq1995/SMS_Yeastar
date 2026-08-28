@@ -294,6 +294,72 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
       }
       return;
     }
+    if (event === "sms_inbox_reply") {
+      const toNumber = typeof args.to_number === "string" ? args.to_number.replace(/\s+/g, "") : "";
+      const message = typeof args.message === "string" ? args.message.trim() : "";
+      const jobId =
+        (typeof args.job_uuid === "string" && args.job_uuid.trim()) ||
+        (typeof args.jobUUID === "string" && args.jobUUID.trim()) ||
+        undefined;
+      if (!toNumber) {
+        sendInvokeJson(res, { error: "missing_to_number" });
+        return;
+      }
+      if (!message) {
+        sendInvokeJson(res, { error: "missing_message" });
+        return;
+      }
+      const guarded = guardOutbound(toNumber, message, jobId);
+      if (!guarded.ok) {
+        insertOutbound({
+          account_uuid: acct,
+          job_uuid: jobId,
+          to_number: toNumber,
+          body: message,
+          status: "blocked_test_mode",
+          provider_response: guarded.reason,
+          rule_name: "Inbox reply",
+        });
+        sendInvokeJson(res, { error: guarded.reason });
+        return;
+      }
+      sendInvokeJson(res, { ok: true, queued: true });
+      void enqueueSend(guarded.destination, guarded.message, { jobUuid: jobId })
+        .then(async (result) => {
+          const status = guarded.redirected
+            ? result.accepted
+              ? result.dryRun
+                ? "test_redirected_dry_run"
+                : "test_redirected"
+              : "failed"
+            : result.accepted
+              ? result.dryRun
+                ? "dry_run"
+                : "submitted"
+              : "failed";
+          insertOutbound({
+            account_uuid: acct,
+            job_uuid: jobId,
+            to_number: toNumber,
+            body: message,
+            status,
+            provider_response: yeastarResultDetail(result),
+            rule_name: "Inbox reply",
+          });
+          if (result.accepted && jobId) {
+            const token = await resolveAccessToken(acct, payload.auth);
+            if (token) {
+              void createJobNote(
+                token,
+                jobId,
+                `SMS sent to ${guarded.destination}${guarded.redirected ? ` (test redirect from ${toNumber})` : ""}: ${message}`
+              ).catch((err) => console.error("job note failed", err));
+            }
+          }
+        })
+        .catch((err) => console.error("inbox reply failed", err));
+      return;
+    }
     if (event === "sms_dashboard_send") {
       const jobId = (args.job_uuid as string) || (args.jobUUID as string) || job;
       const toNumber = typeof args.to_number === "string" ? args.to_number.replace(/\s+/g, "") : "";

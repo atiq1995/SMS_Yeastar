@@ -372,6 +372,34 @@ export const SHARED_STYLES = `
     border-bottom-left-radius: 4px;
   }
   .inbox-thread .msg-meta { font-size: 10px; color: #9ca3af; margin-top: 4px; padding: 0 4px; }
+  .inbox-reply {
+    flex-shrink: 0;
+    padding: 12px 16px;
+    border-top: 1px solid #e5e7eb;
+    background: #fff;
+  }
+  .inbox-reply-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+  }
+  .inbox-reply textarea {
+    flex: 1;
+    min-height: 42px;
+    max-height: 120px;
+    resize: vertical;
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  .inbox-reply button {
+    flex-shrink: 0;
+    margin: 0;
+  }
+  .inbox-reply .hint {
+    margin: 6px 0 0;
+    font-size: 11px;
+  }
 `;
 
 export const COMPOSER_STYLES = `
