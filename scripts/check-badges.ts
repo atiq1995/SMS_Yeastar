@@ -16,7 +16,7 @@ assert.deepEqual(diffRemovedUuids(["a", "b"], ["a"]), ["b"]);
 
 const badges = parseBadgeJson(JSON.stringify([{ uuid: "1", name: "Don't Chase" }]));
 assert.equal(anyBadgeMatches(badges, [{ uuid: "1", name: "Don't Chase" }]), true);
-assert.equal(anyBadgeMatches(badges, [{ uuid: "", name: "don't chase" }]), true);
+assert.equal(anyBadgeMatches(badges, [{ uuid: "", name: "don't chase" }]), false);
 assert.equal(anyBadgeMatches(badges, [{ uuid: "2", name: "Other" }]), false);
 
 const from = new Date("2026-08-27T02:00:00.000Z"); // ~12:00 Melbourne AEST

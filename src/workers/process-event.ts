@@ -19,6 +19,7 @@ import {
   logEvent,
   getJobBadgeSnapshot,
   setJobBadgeSnapshot,
+  hasJobBadgeSnapshot,
   upsertScheduledSend,
   cancelScheduledByBadge,
   cancelScheduledForJobRule,
@@ -321,9 +322,8 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
 
   if (isBadgeEvent) {
     const prev = getJobBadgeSnapshot(jobUuid);
-    // First observation of a job that already has several badges: seed baseline only
-    // (avoids blasting every matching automation after deploy). A 0→1 add still fires.
-    if (prev.length === 0 && badgeUuids.length > 1) {
+    // First time this job is ever seen: store badges only — never fire (Radinal deploy safety).
+    if (!hasJobBadgeSnapshot(jobUuid)) {
       setJobBadgeSnapshot(jobUuid, badgeUuids);
     } else {
       const addedUuids = diffAddedUuids(prev, badgeUuids);
@@ -379,7 +379,7 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
         }
       }
     }
-  } else if (!getJobBadgeSnapshot(jobUuid).length && badgeUuids.length) {
+  } else if (!hasJobBadgeSnapshot(jobUuid) && badgeUuids.length) {
     // First sight of job badges without a badges event — seed snapshot only
     setJobBadgeSnapshot(jobUuid, badgeUuids);
   }
@@ -426,21 +426,38 @@ export async function processScheduledSend(row: {
   account_uuid: string | null;
   job_uuid: string;
   rule_id: number;
+  badge_uuid: string | null;
   badge_name: string | null;
-}): Promise<{ ok: boolean; reason?: string }> {
+}): Promise<{ ok: boolean; reason?: string; cancel?: boolean }> {
   const rule = listRules().find((r) => r.id === row.rule_id);
   if (!rule || !rule.enabled || rule.trigger_type !== "scheduled") {
-    return { ok: false, reason: "rule_gone" };
+    return { ok: false, reason: "rule_gone", cancel: true };
   }
   const accountUuid = row.account_uuid || "";
   if (!accountUuid) return { ok: false, reason: "no_account" };
   const token = await getAccessToken(accountUuid);
   if (!token) return { ok: false, reason: "no_oauth" };
-  const job = await getJob(token, row.job_uuid);
+
+  let job: Record<string, unknown>;
+  try {
+    job = await getJob(token, row.job_uuid);
+  } catch {
+    return { ok: false, reason: "job_not_found", cancel: true };
+  }
+
+  const active = job.active;
+  if (active === 0 || active === "0" || active === false) {
+    return { ok: false, reason: "job_inactive", cancel: true };
+  }
+
   const companyUuid = jobCompanyUuid(job);
-  if (!companyUuid) return { ok: false, reason: "no_company" };
+  if (!companyUuid) return { ok: false, reason: "no_company", cancel: true };
   const company = await getCompany(token, companyUuid);
   const badgeUuids = parseJobBadgesField(job.badges);
+  if (row.badge_uuid && rule.schedule_anchor === "badge_added") {
+    const stillOn = badgeUuids.some((u) => u.toLowerCase() === row.badge_uuid!.toLowerCase());
+    if (!stillOn) return { ok: false, reason: "badge_removed", cancel: true };
+  }
   const jobBadges = await resolveBadgesByUuids(token, badgeUuids);
   const status = typeof job.status === "string" ? job.status : undefined;
 
@@ -455,5 +472,6 @@ export async function processScheduledSend(row: {
     jobBadges,
     rules: [{ rule, badgeName: row.badge_name ?? undefined, idemSuffix: `sched:${row.id}` }],
   });
+  if (result.reason === "blocked_suppress_badge") return { ok: false, reason: result.reason, cancel: true };
   return { ok: !!result.sent, reason: result.reason };
 }

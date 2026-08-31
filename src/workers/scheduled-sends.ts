@@ -2,9 +2,11 @@ import {
   listDueScheduled,
   updateScheduledStatus,
   getRule,
+  countRuleSendsToday,
+  finalizeScheduledCancel,
 } from "../db/repository.js";
 import { automationQuietHours } from "../engine/automation-safety.js";
-import { slidePastQuietHours } from "../engine/badges.js";
+import { melbourneDayStartIso, slidePastQuietHours } from "../engine/badges.js";
 import { processScheduledSend } from "./process-event.js";
 
 const CATCHUP_MS = 24 * 3600_000;
@@ -41,18 +43,21 @@ export async function tickScheduledSends(): Promise<void> {
 
       const rule = getRule(row.rule_id);
       if (!rule?.enabled) {
-        updateScheduledStatus(row.id, "cancelled");
+        finalizeScheduledCancel(row, "rule_disabled");
         continue;
+      }
+
+      if (rule.daily_send_cap && rule.daily_send_cap > 0) {
+        const sentToday = countRuleSendsToday(rule.id, melbourneDayStartIso(now));
+        if (sentToday >= rule.daily_send_cap) continue;
       }
 
       try {
         const result = await processScheduledSend(row);
         if (result.ok) {
           updateScheduledStatus(row.id, "sent");
-        } else if (result.reason === "blocked_suppress_badge") {
-          updateScheduledStatus(row.id, "cancelled_suppress");
-        } else if (result.reason === "rule_gone") {
-          updateScheduledStatus(row.id, "cancelled");
+        } else if (result.cancel) {
+          finalizeScheduledCancel(row, result.reason ?? "cancelled");
         } else {
           updateScheduledStatus(row.id, "failed");
           console.warn("scheduled send fail", row.id, result.reason);

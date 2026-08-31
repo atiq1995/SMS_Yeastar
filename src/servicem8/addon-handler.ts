@@ -202,6 +202,7 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
             schedule_offset_value?: number | null;
             schedule_offset_unit?: string | null;
             schedule_anchor?: string | null;
+            daily_send_cap?: number | null;
           }[]).map((r, i) => ({
             id: r.id,
             name: r.name,
@@ -217,6 +218,7 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
             schedule_offset_value: r.schedule_offset_value ?? null,
             schedule_offset_unit: r.schedule_offset_unit ?? null,
             schedule_anchor: r.schedule_anchor ?? null,
+            daily_send_cap: r.daily_send_cap ?? null,
           }))
         );
         sendInvokeJson(res, {
@@ -235,6 +237,7 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
             schedule_offset_value: r.schedule_offset_value,
             schedule_offset_unit: r.schedule_offset_unit ?? "",
             schedule_anchor: r.schedule_anchor ?? "",
+            daily_send_cap: r.daily_send_cap ?? null,
           })),
         });
         return;

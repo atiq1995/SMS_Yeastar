@@ -42,13 +42,9 @@ export function parseJobBadgesField(raw: unknown): string[] {
 }
 
 export function badgeMatches(haystack: BadgeRef[], needle: BadgeRef): boolean {
-  const nUuid = needle.uuid.toLowerCase();
-  const nName = needle.name.toLowerCase();
-  return haystack.some((b) => {
-    if (nUuid && b.uuid && b.uuid.toLowerCase() === nUuid) return true;
-    if (nName && b.name && b.name.toLowerCase() === nName) return true;
-    return false;
-  });
+  const nUuid = needle.uuid.trim().toLowerCase();
+  if (!nUuid) return false;
+  return haystack.some((b) => b.uuid && b.uuid.toLowerCase() === nUuid);
 }
 
 export function anyBadgeMatches(haystack: BadgeRef[], needles: BadgeRef[]): boolean {
@@ -169,4 +165,16 @@ export function slidePastQuietHours(fireAt: Date, startHour: number, endHour: nu
   }
   const wall = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}T${String(endHour).padStart(2, "0")}:00:00`;
   return melbourneWallToUtc(wall);
+}
+
+/** Start of today (00:00) in Australia/Melbourne as UTC ISO. */
+export function melbourneDayStartIso(from = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Australia/Melbourne",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(from);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "00";
+  return melbourneWallToUtc(`${get("year")}-${get("month")}-${get("day")}T00:00:00`).toISOString();
 }

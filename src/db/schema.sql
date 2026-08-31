@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS rules (
   schedule_offset_value INTEGER,
   schedule_offset_unit TEXT,
   schedule_anchor TEXT,
+  daily_send_cap INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

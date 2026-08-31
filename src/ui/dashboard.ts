@@ -32,6 +32,7 @@ function statusLabelText(s: string): string {
       blocked_exclusion: "Blocked exclusion",
       blocked_suppress_badge: "Suppressed badge",
       blocked_test_mode: "Blocked test mode",
+      cancelled_scheduled: "Scheduled cancelled",
       failed: "Failed",
     }[s] || s
   );
@@ -76,6 +77,7 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
       schedule_offset_value: r.schedule_offset_value,
       schedule_offset_unit: r.schedule_offset_unit ?? "days",
       schedule_anchor: r.schedule_anchor ?? "badge_added",
+      daily_send_cap: r.daily_send_cap ?? null,
     }))
   );
   const badgesJson = JSON.stringify(badges);
@@ -323,6 +325,9 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
         </div>
       </div>
       <p class="hint">Months use Melbourne calendar dates (3 months from 27 Aug → 27 Nov).</p>
+      <label for="ruleDailyCap">Daily send cap (optional)</label>
+      <input type="number" id="ruleDailyCap" min="0" placeholder="Unlimited" />
+      <p class="hint">Max sends per day for this rule (Melbourne day). Oldest due first; extra rolls to next day.</p>
     </div>
     <div id="ruleSuppressWrap">
       <label>Suppress if job has badge</label>
@@ -465,6 +470,7 @@ function statusLabel(s) {
     blocked_exclusion: 'Blocked exclusion',
     blocked_suppress_badge: 'Suppressed badge',
     blocked_test_mode: 'Blocked test mode',
+    cancelled_scheduled: 'Scheduled cancelled',
     failed: 'Failed'
   };
   return map[s] || s;
@@ -866,7 +872,8 @@ function whenLabel(r) {
     const anchor = r.schedule_anchor === 'completed' ? 'job completed' : 'badge added';
     const names = parseBadges(r.badge_json).map((b) => b.name).filter(Boolean);
     const badgeBit = r.schedule_anchor === 'completed' ? '' : (names.length ? ' (' + names.join(', ') + ')' : '');
-    return 'Scheduled ' + n + ' ' + u + ' after ' + anchor + badgeBit;
+    const capBit = r.daily_send_cap ? ', max ' + r.daily_send_cap + '/day' : '';
+    return 'Scheduled ' + n + ' ' + u + ' after ' + anchor + badgeBit + capBit;
   }
   return 'When a job is created';
 }
@@ -964,6 +971,7 @@ function openRuleModal(id) {
   document.getElementById('ruleScheduleAnchor').value = rule && rule.schedule_anchor ? rule.schedule_anchor : 'badge_added';
   document.getElementById('ruleOffsetValue').value = rule && rule.schedule_offset_value ? rule.schedule_offset_value : 1;
   document.getElementById('ruleOffsetUnit').value = rule && rule.schedule_offset_unit ? rule.schedule_offset_unit : 'days';
+  document.getElementById('ruleDailyCap').value = rule && rule.daily_send_cap ? String(rule.daily_send_cap) : '';
   fillBadgeCheckboxes('ruleBadgeList', rule ? rule.badge_json : '[]');
   fillBadgeCheckboxes('ruleSuppressList', rule ? rule.suppress_badge_json : '[]');
   const type = rule && rule.recipient_type ? rule.recipient_type : 'job_contact';
@@ -1006,6 +1014,8 @@ function applyRuleModal() {
     alert('Enter a wait of at least 1.');
     return false;
   }
+  const capRaw = scheduleEnabled(trigger_type) ? document.getElementById('ruleDailyCap').value.trim() : '';
+  const daily_send_cap = capRaw ? Math.max(1, Number(capRaw) || 0) : null;
   const payload = {
     name,
     trigger_type,
@@ -1018,6 +1028,7 @@ function applyRuleModal() {
     schedule_offset_value,
     schedule_offset_unit: scheduleEnabled(trigger_type) ? document.getElementById('ruleOffsetUnit').value : '',
     schedule_anchor: scheduleEnabled(trigger_type) ? document.getElementById('ruleScheduleAnchor').value : '',
+    daily_send_cap,
   };
   if (editingRuleId == null) {
     rules.push({ id: nextRuleId++, enabled: true, ...payload });
@@ -1361,6 +1372,7 @@ function initDashboard() {
           schedule_offset_value: r.schedule_offset_value ?? null,
           schedule_offset_unit: r.schedule_offset_unit || null,
           schedule_anchor: r.schedule_anchor || null,
+          daily_send_cap: r.daily_send_cap ?? null,
         }));
         const res = parseInvoke(await invoke('sms_dashboard_save', { section: 'rules', rules: payload }));
         if (res && res.ok !== false) {

@@ -31,6 +31,7 @@ addColumn(db, "ALTER TABLE rules ADD COLUMN schedule_anchor TEXT");
 addColumn(db, "ALTER TABLE outbound_messages ADD COLUMN rule_id INTEGER");
 addColumn(db, "ALTER TABLE outbound_messages ADD COLUMN rule_name TEXT");
 addColumn(db, "ALTER TABLE outbound_messages ADD COLUMN badge_name TEXT");
+addColumn(db, "ALTER TABLE rules ADD COLUMN daily_send_cap INTEGER");
 seedDefaults(db);
 const refreshedTemplates = refreshDefaultTemplates(db);
 const repaired = repairInboundMessages(db);

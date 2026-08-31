@@ -27,6 +27,7 @@ export type RuleRow = {
   schedule_offset_value: number | null;
   schedule_offset_unit: string | null;
   schedule_anchor: string | null;
+  daily_send_cap: number | null;
 };
 
 export type ScheduledSendRow = {
@@ -77,6 +78,7 @@ export function listRules(): RuleRow[] {
     schedule_offset_value: r.schedule_offset_value ?? null,
     schedule_offset_unit: r.schedule_offset_unit ?? null,
     schedule_anchor: r.schedule_anchor ?? null,
+    daily_send_cap: r.daily_send_cap ?? null,
   }));
 }
 
@@ -92,6 +94,7 @@ export function getRule(id: number): RuleRow | undefined {
     schedule_offset_value: row.schedule_offset_value ?? null,
     schedule_offset_unit: row.schedule_offset_unit ?? null,
     schedule_anchor: row.schedule_anchor ?? null,
+    daily_send_cap: row.daily_send_cap ?? null,
   };
 }
 
@@ -110,6 +113,7 @@ export type RuleInput = {
   schedule_offset_value?: number | null;
   schedule_offset_unit?: string | null;
   schedule_anchor?: string | null;
+  daily_send_cap?: number | null;
 };
 export function replaceRules(rules: RuleInput[]): void {
   const d = db();
@@ -124,15 +128,15 @@ export function replaceRules(rules: RuleInput[]): void {
       `UPDATE rules SET
         name=?, trigger_type=?, status_match=?, template_id=?, enabled=?, sort_order=?,
         recipient_type=?, recipient_number=?, badge_json=?, suppress_badge_json=?,
-        schedule_offset_value=?, schedule_offset_unit=?, schedule_anchor=?
+        schedule_offset_value=?, schedule_offset_unit=?, schedule_anchor=?, daily_send_cap=?
        WHERE id=?`
     );
     const ins = d.prepare(
       `INSERT INTO rules(
         name, trigger_type, status_match, template_id, enabled, sort_order,
         recipient_type, recipient_number, badge_json, suppress_badge_json,
-        schedule_offset_value, schedule_offset_unit, schedule_anchor
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`
+        schedule_offset_value, schedule_offset_unit, schedule_anchor, daily_send_cap
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
     );
     rules.forEach((r, i) => {
       const type = r.recipient_type === "company_primary" || r.recipient_type === "custom" ? r.recipient_type : "job_contact";
@@ -142,6 +146,8 @@ export function replaceRules(rules: RuleInput[]): void {
           ? r.schedule_offset_unit
           : null;
       const anchor = r.schedule_anchor === "badge_added" || r.schedule_anchor === "completed" ? r.schedule_anchor : null;
+      const cap =
+        typeof r.daily_send_cap === "number" && r.daily_send_cap > 0 ? Math.floor(r.daily_send_cap) : null;
       const vals = [
         r.name,
         r.trigger_type,
@@ -156,6 +162,7 @@ export function replaceRules(rules: RuleInput[]): void {
         r.schedule_offset_value ?? null,
         unit,
         anchor,
+        cap,
       ] as const;
       if (typeof r.id === "number" && r.id > 0) {
         upd.run(...vals, r.id);
@@ -462,6 +469,13 @@ export function getJobBadgeSnapshot(jobUuid: string): string[] {
   }
 }
 
+export function hasJobBadgeSnapshot(jobUuid: string): boolean {
+  const row = db().prepare("SELECT 1 AS ok FROM job_badge_snapshot WHERE job_uuid = ?").get(jobUuid) as
+    | { ok: number }
+    | undefined;
+  return !!row;
+}
+
 export function setJobBadgeSnapshot(jobUuid: string, badgeUuids: string[]): void {
   db()
     .prepare(
@@ -502,18 +516,24 @@ export function upsertScheduledSend(row: {
 }
 
 export function cancelScheduledForJobRule(jobUuid: string, ruleId: number, reason = "cancelled"): void {
-  db()
-    .prepare(`UPDATE scheduled_sends SET status = ? WHERE job_uuid = ? AND rule_id = ? AND status = 'pending'`)
-    .run(reason, jobUuid, ruleId);
+  const rows = db()
+    .prepare(`SELECT * FROM scheduled_sends WHERE job_uuid = ? AND rule_id = ? AND status = 'pending'`)
+    .all(jobUuid, ruleId) as ScheduledSendRow[];
+  for (const row of rows) {
+    finalizeScheduledCancel(row, reason);
+  }
 }
 
 export function cancelScheduledByBadge(jobUuid: string, badgeUuid: string): void {
-  db()
+  const rows = db()
     .prepare(
-      `UPDATE scheduled_sends SET status = 'cancelled'
+      `SELECT * FROM scheduled_sends
        WHERE job_uuid = ? AND status = 'pending' AND lower(badge_uuid) = lower(?)`
     )
-    .run(jobUuid, badgeUuid);
+    .all(jobUuid, badgeUuid) as ScheduledSendRow[];
+  for (const row of rows) {
+    finalizeScheduledCancel(row, "badge_removed");
+  }
 }
 
 export function listDueScheduled(nowIso: string, limit = 50): ScheduledSendRow[] {
@@ -543,8 +563,64 @@ export function updateScheduledStatus(id: number, status: string, fireAt?: strin
 }
 
 export function cancelScheduledById(id: number): boolean {
-  const r = db()
-    .prepare(`UPDATE scheduled_sends SET status = 'cancelled' WHERE id = ? AND status = 'pending'`)
-    .run(id);
-  return r.changes > 0;
+  const row = db().prepare(`SELECT * FROM scheduled_sends WHERE id = ? AND status = 'pending'`).get(id) as
+    | ScheduledSendRow
+    | undefined;
+  if (!row) return false;
+  finalizeScheduledCancel(row, "cancelled_manual");
+  return true;
+}
+
+const RULE_SEND_COUNT_STATUSES = "('sent','dry_run','test_redirected','test_redirected_dry_run','submitted','queued')";
+
+export function countRuleSendsToday(ruleId: number, sinceIso: string): number {
+  const row = db()
+    .prepare(
+      `SELECT COUNT(*) AS c FROM outbound_messages
+       WHERE rule_id = ? AND created_at >= ? AND status IN ${RULE_SEND_COUNT_STATUSES}`
+    )
+    .get(ruleId, sinceIso) as { c: number };
+  return row.c;
+}
+
+export function logScheduledCancel(row: {
+  account_uuid?: string | null;
+  job_uuid: string;
+  rule_id: number;
+  rule_name: string;
+  badge_name?: string | null;
+  reason: string;
+  scheduled_id: number;
+}): void {
+  insertOutbound({
+    account_uuid: row.account_uuid ?? undefined,
+    job_uuid: row.job_uuid,
+    to_number: "-",
+    body: `(scheduled cancelled) ${row.rule_name}`,
+    status: "cancelled_scheduled",
+    provider_response: row.reason,
+    idempotency_key: `sched-cancel:${row.scheduled_id}`,
+    rule_id: row.rule_id,
+    rule_name: row.rule_name,
+    badge_name: row.badge_name ?? null,
+  });
+}
+
+export function finalizeScheduledCancel(row: ScheduledSendRow, reason: string, status?: string): void {
+  const st = status ?? (reason.startsWith("cancelled") ? reason : "cancelled");
+  updateScheduledStatus(row.id, st);
+  const rule = getRule(row.rule_id);
+  try {
+    logScheduledCancel({
+      account_uuid: row.account_uuid,
+      job_uuid: row.job_uuid,
+      rule_id: row.rule_id,
+      rule_name: rule?.name ?? `Rule #${row.rule_id}`,
+      badge_name: row.badge_name,
+      reason,
+      scheduled_id: row.id,
+    });
+  } catch {
+    // ponytail: duplicate cancel log on retry — idempotency_key is unique per scheduled row
+  }
 }
