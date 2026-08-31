@@ -7,6 +7,7 @@ import {
   listPendingScheduled,
   listRules,
   listTemplates,
+  syncSm8Templates,
 } from "../db/repository.js";
 import { env } from "../config/env.js";
 import { APP_VERSION } from "../config/version.js";
@@ -39,6 +40,11 @@ function statusLabelText(s: string): string {
 }
 
 export async function renderDashboardHtml(accountUuid: string, auth?: { accessToken?: string }): Promise<string> {
+  const token = await resolveAccessToken(accountUuid, auth);
+  if (token) {
+    const imported = await listSmsTemplates(token);
+    if (imported.length) syncSm8Templates(imported);
+  }
   const templates = listTemplates();
   const rules = listRules();
   const outbound = listOutbound(50);
@@ -54,7 +60,6 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
   const uat = resolveUatConfig();
   const uatEnabled = uat.enabled;
   const uatRedirect = uat.mobile;
-  const token = await resolveAccessToken(accountUuid, auth);
   const importedTemplates = token ? await listSmsTemplates(token) : [];
   const badges = token ? await listBadges(token) : [];
   const pending = listPendingScheduled(100);
@@ -147,7 +152,7 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
   <div class="panel-head">
     <div>
       <h2>Message templates</h2>
-      <p class="muted" style="margin:4px 0 0">Automation rules still use internal templates. Job Send SMS uses imported ServiceM8 SMS templates.</p>
+      <p class="muted" style="margin:4px 0 0">ServiceM8 SMS templates sync into automations automatically. Job Send SMS can also use imported templates below.</p>
     </div>
     <div class="row-actions">
       <button type="button" id="toggleImportedTemplates" class="secondary">Show imported templates</button>

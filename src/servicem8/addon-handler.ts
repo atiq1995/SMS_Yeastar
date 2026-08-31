@@ -9,6 +9,7 @@ import {
   insertOutbound,
   getSingleOAuthTokens,
   listTemplates,
+  syncSm8Templates,
   listRules,
   listOutbound,
   listInbound,
@@ -107,6 +108,10 @@ export async function handleAddonPost(req: Request, res: Response): Promise<void
     }
     if (event === "sms_dashboard_data") {
       const token = await resolveAccessToken(acct, payload.auth);
+      if (token) {
+        const sm8 = await listSmsTemplates(token);
+        if (sm8.length) syncSm8Templates(sm8);
+      }
       const since = new Date(Date.now() - 7 * 864e5).toISOString();
       const rulesById = new Map(listRules().map((r) => [r.id, r.name]));
       sendInvokeJson(res, {

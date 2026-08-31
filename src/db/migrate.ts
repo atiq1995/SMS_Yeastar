@@ -32,6 +32,7 @@ addColumn(db, "ALTER TABLE outbound_messages ADD COLUMN rule_id INTEGER");
 addColumn(db, "ALTER TABLE outbound_messages ADD COLUMN rule_name TEXT");
 addColumn(db, "ALTER TABLE outbound_messages ADD COLUMN badge_name TEXT");
 addColumn(db, "ALTER TABLE rules ADD COLUMN daily_send_cap INTEGER");
+addColumn(db, "ALTER TABLE templates ADD COLUMN sm8_uuid TEXT UNIQUE");
 seedDefaults(db);
 const refreshedTemplates = refreshDefaultTemplates(db);
 const repaired = repairInboundMessages(db);

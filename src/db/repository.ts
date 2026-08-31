@@ -55,6 +55,38 @@ export function listTemplates(): TemplateRow[] {
   return db().prepare("SELECT id, name, body FROM templates ORDER BY name").all() as TemplateRow[];
 }
 
+/** Import active ServiceM8 SMS templates into local DB for automation dropdown + sends. */
+export function syncSm8Templates(items: { id: string; name: string; body: string }[]): number {
+  const d = db();
+  const upsert = d.prepare(
+    `INSERT INTO templates(name, body, sm8_uuid, updated_at) VALUES(?, ?, ?, datetime('now'))
+     ON CONFLICT(sm8_uuid) DO UPDATE SET
+       name = excluded.name,
+       body = excluded.body,
+       updated_at = datetime('now')`
+  );
+  let n = 0;
+  for (const item of items) {
+    const sm8Uuid = String(item.id ?? "").trim();
+    const body = String(item.body ?? "").trim();
+    if (!sm8Uuid || !body) continue;
+    const baseName = String(item.name ?? "").trim() || "Untitled";
+    const name = resolveSm8TemplateName(d, baseName, sm8Uuid);
+    upsert.run(name, body, sm8Uuid);
+    n++;
+  }
+  return n;
+}
+
+function resolveSm8TemplateName(d: Database.Database, name: string, sm8Uuid: string): string {
+  const row = d.prepare("SELECT sm8_uuid FROM templates WHERE name = ?").get(name) as
+    | { sm8_uuid: string | null }
+    | undefined;
+  if (!row || row.sm8_uuid === sm8Uuid) return name;
+  const candidate = `${name} (${sm8Uuid.slice(0, 8)})`;
+  return candidate === name ? `${name} (sm8)` : resolveSm8TemplateName(d, candidate, sm8Uuid);
+}
+
 export function getTemplate(id: number): TemplateRow | undefined {
   return db().prepare("SELECT id, name, body FROM templates WHERE id = ?").get(id) as TemplateRow | undefined;
 }
