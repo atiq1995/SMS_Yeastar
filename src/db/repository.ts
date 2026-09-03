@@ -195,7 +195,9 @@ export function replaceRules(rules: RuleInput[]): void {
         cap,
       ] as const;
       if (typeof r.id === "number" && r.id > 0) {
-        upd.run(...vals, r.id);
+        const result = upd.run(...vals, r.id);
+        // Client may send a synthetic id that is not in DB yet — insert instead of silent no-op.
+        if (result.changes === 0) ins.run(...vals);
       } else {
         ins.run(...vals);
       }

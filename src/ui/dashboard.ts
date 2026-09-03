@@ -423,6 +423,7 @@ let rules = ${rulesJson};
 let sm8Badges = ${badgesJson};
 let pendingRows = ${pendingJson};
 const persistedTplIds = new Set(${JSON.stringify(templates.map((t) => t.id))});
+const persistedRuleIds = new Set(${JSON.stringify(rules.map((r) => r.id))});
 let nextTplId = ${maxTplId + 1};
 let nextRuleId = ${maxRuleId + 1};
 let editingTplId = null;
@@ -565,6 +566,8 @@ function applyDashboardData(data) {
   }
   if (Array.isArray(data.rules)) {
     rules = data.rules;
+    persistedRuleIds.clear();
+    rules.forEach((r) => persistedRuleIds.add(r.id));
     nextRuleId = rules.reduce((m, t) => Math.max(m, t.id), 0) + 1;
     renderRules();
   }
@@ -1383,7 +1386,7 @@ function initDashboard() {
     on('saveRules', 'click', async () => {
       try {
         const payload = rules.map((r, i) => ({
-          id: r.id,
+          id: persistedRuleIds.has(r.id) ? r.id : undefined,
           name: r.name,
           trigger_type: r.trigger_type,
           status_match: r.status_match || null,
@@ -1403,6 +1406,8 @@ function initDashboard() {
         if (res && res.ok !== false) {
           if (Array.isArray(res.rules)) {
             rules = res.rules;
+            persistedRuleIds.clear();
+            rules.forEach((r) => persistedRuleIds.add(r.id));
             nextRuleId = rules.reduce((m, t) => Math.max(m, t.id), 0) + 1;
             renderRules();
           }
