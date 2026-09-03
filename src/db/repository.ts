@@ -58,13 +58,9 @@ export function listTemplates(): TemplateRow[] {
 /** Import active ServiceM8 SMS templates into local DB for automation dropdown + sends. */
 export function syncSm8Templates(items: { id: string; name: string; body: string }[]): number {
   const d = db();
-  const upsert = d.prepare(
-    `INSERT INTO templates(name, body, sm8_uuid, updated_at) VALUES(?, ?, ?, datetime('now'))
-     ON CONFLICT(sm8_uuid) DO UPDATE SET
-       name = excluded.name,
-       body = excluded.body,
-       updated_at = datetime('now')`
-  );
+  const find = d.prepare("SELECT id FROM templates WHERE sm8_uuid = ?");
+  const upd = d.prepare("UPDATE templates SET name = ?, body = ?, updated_at = datetime('now') WHERE id = ?");
+  const ins = d.prepare("INSERT INTO templates(name, body, sm8_uuid) VALUES(?, ?, ?)");
   let n = 0;
   for (const item of items) {
     const sm8Uuid = String(item.id ?? "").trim();
@@ -72,7 +68,9 @@ export function syncSm8Templates(items: { id: string; name: string; body: string
     if (!sm8Uuid || !body) continue;
     const baseName = String(item.name ?? "").trim() || "Untitled";
     const name = resolveSm8TemplateName(d, baseName, sm8Uuid);
-    upsert.run(name, body, sm8Uuid);
+    const existing = find.get(sm8Uuid) as { id: number } | undefined;
+    if (existing) upd.run(name, body, existing.id);
+    else ins.run(name, body, sm8Uuid);
     n++;
   }
   return n;

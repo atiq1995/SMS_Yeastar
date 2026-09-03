@@ -33,8 +33,9 @@ addColumn(db, "ALTER TABLE outbound_messages ADD COLUMN rule_name TEXT");
 addColumn(db, "ALTER TABLE outbound_messages ADD COLUMN badge_name TEXT");
 addColumn(db, "ALTER TABLE rules ADD COLUMN daily_send_cap INTEGER");
 addColumn(db, "ALTER TABLE templates ADD COLUMN sm8_uuid TEXT");
+db.exec("DROP INDEX IF EXISTS idx_templates_sm8_uuid");
 try {
-  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_templates_sm8_uuid ON templates(sm8_uuid) WHERE sm8_uuid IS NOT NULL");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_templates_sm8_uuid ON templates(sm8_uuid)");
 } catch (e: unknown) {
   const msg = e instanceof Error ? e.message : String(e);
   if (!/already exists/i.test(msg)) throw e;
