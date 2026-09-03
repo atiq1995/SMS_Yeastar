@@ -200,9 +200,10 @@ export const SHARED_STYLES = `
     inset: 0;
     background: rgba(0, 0, 0, 0.35);
     z-index: 100;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     padding: 16px;
+    overflow-y: auto;
   }
   .modal-backdrop.open { display: flex; }
   .modal {
@@ -210,14 +211,24 @@ export const SHARED_STYLES = `
     border-radius: 10px;
     width: 100%;
     max-width: 520px;
-    max-height: 90vh;
+    max-height: calc(100vh - 32px);
     overflow-y: auto;
     padding: 20px;
+    margin: auto;
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
     border: 1px solid #e5e7eb;
   }
   .modal h3 { margin: 0 0 16px; font-size: 1.05rem; color: #111827; }
-  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+  .modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 8px;
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    padding-top: 12px;
+  }
   .modal-actions button { margin-bottom: 0; }
   .inbox-layout {
     display: flex;

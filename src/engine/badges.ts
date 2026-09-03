@@ -62,6 +62,11 @@ export function diffRemovedUuids(prev: string[], next: string[]): string[] {
   return prev.filter((u) => !after.has(u.toLowerCase()));
 }
 
+/** First sight of a job that already has several badges: seed only (no blast after deploy). 0→1 still fires. */
+export function seedBadgesWithoutFiring(hasSnapshot: boolean, currentCount: number): boolean {
+  return !hasSnapshot && currentCount > 1;
+}
+
 /** Calendar months in Australia/Melbourne wall time → UTC ISO. */
 export function addOffsetMelbourne(from: Date, value: number, unit: "days" | "weeks" | "months"): Date {
   const parts = new Intl.DateTimeFormat("en-CA", {

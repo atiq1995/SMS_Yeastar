@@ -43,6 +43,7 @@ import {
   diffRemovedUuids,
   parseBadgeJson,
   parseJobBadgesField,
+  seedBadgesWithoutFiring,
   type BadgeRef,
 } from "../engine/badges.js";
 import { enqueueSend } from "../yeastar/queue.js";
@@ -322,8 +323,9 @@ export async function processJobEvent(input: ProcessInput): Promise<{ sent: bool
 
   if (isBadgeEvent) {
     const prev = getJobBadgeSnapshot(jobUuid);
-    // First time this job is ever seen: store badges only — never fire (Radinal deploy safety).
-    if (!hasJobBadgeSnapshot(jobUuid)) {
+    // Deploy safety: first sight of a job that already has several badges — store, don't fire.
+    // A first 0→1 add (UAT: put 2 Week Follow-up on a known job) still fires.
+    if (seedBadgesWithoutFiring(hasJobBadgeSnapshot(jobUuid), badgeUuids.length)) {
       setJobBadgeSnapshot(jobUuid, badgeUuids);
     } else {
       const addedUuids = diffAddedUuids(prev, badgeUuids);

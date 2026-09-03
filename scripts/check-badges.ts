@@ -6,6 +6,7 @@ import {
   diffRemovedUuids,
   parseBadgeJson,
   parseJobBadgesField,
+  seedBadgesWithoutFiring,
   slidePastQuietHours,
 } from "../src/engine/badges.js";
 
@@ -13,6 +14,9 @@ assert.deepEqual(parseJobBadgesField('["a","b"]'), ["a", "b"]);
 assert.deepEqual(parseJobBadgesField(["x"]), ["x"]);
 assert.deepEqual(diffAddedUuids(["a"], ["a", "b"]), ["b"]);
 assert.deepEqual(diffRemovedUuids(["a", "b"], ["a"]), ["b"]);
+assert.equal(seedBadgesWithoutFiring(false, 6), true);
+assert.equal(seedBadgesWithoutFiring(false, 1), false);
+assert.equal(seedBadgesWithoutFiring(true, 6), false);
 
 const badges = parseBadgeJson(JSON.stringify([{ uuid: "1", name: "Don't Chase" }]));
 assert.equal(anyBadgeMatches(badges, [{ uuid: "1", name: "Don't Chase" }]), true);
