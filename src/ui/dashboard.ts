@@ -310,15 +310,17 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
       <p class="hint">Pick ServiceM8 badges. Multi-select allowed (e.g. Chase payment + Debt Collection).</p>
     </div>
     <div id="ruleScheduleWrap" style="display:none">
-      <label for="ruleScheduleAnchor">Start from</label>
-      <select id="ruleScheduleAnchor">
-        <option value="badge_added">Badge added</option>
-        <option value="completed">Job completed</option>
-      </select>
+      <div id="ruleScheduleAnchorWrap">
+        <label for="ruleScheduleAnchor">Start from</label>
+        <select id="ruleScheduleAnchor">
+          <option value="badge_added">Badge added</option>
+          <option value="completed">Job completed</option>
+        </select>
+      </div>
       <div class="row-actions" style="align-items:flex-end;margin:8px 0">
         <div style="flex:1">
           <label for="ruleOffsetValue">Wait</label>
-          <input type="number" id="ruleOffsetValue" min="1" value="1" />
+          <input type="number" id="ruleOffsetValue" min="0" placeholder="Send now" />
         </div>
         <div style="flex:1">
           <label for="ruleOffsetUnit">Unit</label>
@@ -329,10 +331,10 @@ export async function renderDashboardHtml(accountUuid: string, auth?: { accessTo
           </select>
         </div>
       </div>
-      <p class="hint">Months use Melbourne calendar dates (3 months from 27 Aug → 27 Nov).</p>
+      <p class="hint" id="ruleScheduleHint">Leave Wait empty to send immediately. Set Wait for follow-ups (2 week, 3 month, Annual, Trelona).</p>
       <label for="ruleDailyCap">Daily send cap (optional)</label>
       <input type="number" id="ruleDailyCap" min="0" placeholder="Unlimited" />
-      <p class="hint">Max sends per day for this rule (Melbourne day). Oldest due first; extra rolls to next day.</p>
+      <p class="hint">Max sends per day for this rule (Melbourne day). Oldest due first; extra rolls to next day. Use this on Annual followup (~14k jobs).</p>
     </div>
     <div id="ruleSuppressWrap">
       <label>Suppress if job has badge</label>
@@ -402,7 +404,7 @@ const TRIGGERS = [
   { value: 'en_route', label: 'Technician en route' },
   { value: 'completed', label: 'Job completed' },
   { value: 'badge_added', label: 'Badge added' },
-  { value: 'scheduled', label: 'Scheduled send' },
+  { value: 'scheduled', label: 'After a delay (follow-up)' },
 ];
 const SAMPLE = {
   customerName: 'Jane Smith',
@@ -900,7 +902,7 @@ function badgeMatchEnabled(trigger) {
 }
 
 function scheduleEnabled(trigger) {
-  return trigger === 'scheduled';
+  return trigger === 'scheduled' || trigger === 'badge_added';
 }
 
 function parseBadges(raw) {
@@ -956,6 +958,14 @@ function syncRuleModalFields() {
     badgeWrap.style.display = showBadge ? 'block' : 'none';
   }
   if (scheduleWrap) scheduleWrap.style.display = scheduleEnabled(trigger) ? 'block' : 'none';
+  const anchorWrap = document.getElementById('ruleScheduleAnchorWrap');
+  if (anchorWrap) anchorWrap.style.display = trigger === 'scheduled' ? 'block' : 'none';
+  const hint = document.getElementById('ruleScheduleHint');
+  if (hint) {
+    hint.textContent = trigger === 'badge_added'
+      ? 'Leave Wait empty to send immediately. Set Wait for follow-ups (2 week, 3 month, Annual, Trelona).'
+      : 'Months use Melbourne calendar dates (3 months from 27 Aug → 27 Nov).';
+  }
   if (customWrap) customWrap.style.display = selectedRecipientType() === 'custom' ? 'block' : 'none';
   const tpl = templates.find((t) => t.id === Number(document.getElementById('ruleTemplate').value));
   const preview = document.querySelector('#rulePreview span');
@@ -974,7 +984,7 @@ function openRuleModal(id) {
   document.getElementById('ruleStatus').value = rule ? (rule.status_match || '') : '';
   document.getElementById('ruleTemplate').innerHTML = templateOptions(rule ? rule.template_id : (templates[0] && templates[0].id));
   document.getElementById('ruleScheduleAnchor').value = rule && rule.schedule_anchor ? rule.schedule_anchor : 'badge_added';
-  document.getElementById('ruleOffsetValue').value = rule && rule.schedule_offset_value ? rule.schedule_offset_value : 1;
+  document.getElementById('ruleOffsetValue').value = rule && rule.schedule_offset_value ? rule.schedule_offset_value : '';
   document.getElementById('ruleOffsetUnit').value = rule && rule.schedule_offset_unit ? rule.schedule_offset_unit : 'days';
   document.getElementById('ruleDailyCap').value = rule && rule.daily_send_cap ? String(rule.daily_send_cap) : '';
   fillBadgeCheckboxes('ruleBadgeList', rule ? rule.badge_json : '[]');
@@ -1007,32 +1017,42 @@ function applyRuleModal() {
     alert('Enter a mobile number, or choose customer / company contact.');
     return false;
   }
-  const badge_json = badgeMatchEnabled(trigger_type) && !(trigger_type === 'scheduled' && document.getElementById('ruleScheduleAnchor').value === 'completed')
+  const waitRaw = document.getElementById('ruleOffsetValue').value.trim();
+  const waitNum = Number(waitRaw) || 0;
+  let savedTrigger = trigger_type;
+  let schedule_anchor = '';
+  if (trigger_type === 'badge_added' && waitNum >= 1) {
+    savedTrigger = 'scheduled';
+    schedule_anchor = 'badge_added';
+  } else if (trigger_type === 'scheduled') {
+    schedule_anchor = document.getElementById('ruleScheduleAnchor').value || 'badge_added';
+  }
+  const delayed = savedTrigger === 'scheduled';
+  const badge_json = badgeMatchEnabled(trigger_type) && !(delayed && schedule_anchor === 'completed')
     ? selectedBadgeJson('ruleBadgeList')
     : '[]';
-  if ((trigger_type === 'badge_added' || (trigger_type === 'scheduled' && document.getElementById('ruleScheduleAnchor').value === 'badge_added')) && parseBadges(badge_json).length === 0) {
+  if ((savedTrigger === 'badge_added' || (delayed && schedule_anchor === 'badge_added')) && parseBadges(badge_json).length === 0) {
     alert('Select at least one badge.');
     return false;
   }
-  const schedule_offset_value = scheduleEnabled(trigger_type) ? Number(document.getElementById('ruleOffsetValue').value) || 0 : null;
-  if (scheduleEnabled(trigger_type) && schedule_offset_value < 1) {
-    alert('Enter a wait of at least 1.');
+  if (delayed && waitNum < 1) {
+    alert('Enter a wait of at least 1, or leave Wait empty to send immediately.');
     return false;
   }
-  const capRaw = scheduleEnabled(trigger_type) ? document.getElementById('ruleDailyCap').value.trim() : '';
+  const capRaw = delayed ? document.getElementById('ruleDailyCap').value.trim() : '';
   const daily_send_cap = capRaw ? Math.max(1, Number(capRaw) || 0) : null;
   const payload = {
     name,
-    trigger_type,
-    status_match: statusMatchEnabled(trigger_type) ? document.getElementById('ruleStatus').value.trim() : '',
+    trigger_type: savedTrigger,
+    status_match: statusMatchEnabled(savedTrigger) ? document.getElementById('ruleStatus').value.trim() : '',
     template_id: Number(document.getElementById('ruleTemplate').value) || (templates[0] && templates[0].id) || 1,
     recipient_type,
     recipient_number: recipient_type === 'custom' ? recipient_number : '',
     badge_json,
     suppress_badge_json: selectedBadgeJson('ruleSuppressList'),
-    schedule_offset_value,
-    schedule_offset_unit: scheduleEnabled(trigger_type) ? document.getElementById('ruleOffsetUnit').value : '',
-    schedule_anchor: scheduleEnabled(trigger_type) ? document.getElementById('ruleScheduleAnchor').value : '',
+    schedule_offset_value: delayed ? waitNum : null,
+    schedule_offset_unit: delayed ? document.getElementById('ruleOffsetUnit').value : '',
+    schedule_anchor: delayed ? schedule_anchor : '',
     daily_send_cap,
   };
   if (editingRuleId == null) {
