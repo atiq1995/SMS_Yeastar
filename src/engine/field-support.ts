@@ -24,11 +24,11 @@ export const LIVE_FIELD_SUPPORT: Record<string, FieldSupportInfo> = {
   },
   "job.job_address": {
     status: "exact",
-    note: "Direct job/site address from the ServiceM8 job record.",
+    note: "job_address when set; otherwise composed from geo_* or company address.",
   },
   "job.address": {
     status: "exact",
-    note: "Direct job/site address from the ServiceM8 job record.",
+    note: "Same as job.job_address.",
   },
   "job.company_name": {
     status: "exact",

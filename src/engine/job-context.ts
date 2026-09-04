@@ -9,6 +9,34 @@ function jobStr(job: Record<string, unknown>, ...keys: string[]): string {
   return "";
 }
 
+/** ServiceM8 job_address, else geo_* parts, else company address. */
+export function resolveJobAddress(
+  job: Record<string, unknown>,
+  company?: Record<string, unknown>
+): string {
+  const direct = jobStr(job, "job_address", "address", "site_address");
+  if (direct) return direct;
+
+  const line1 = [jobStr(job, "geo_number"), jobStr(job, "geo_street")].filter(Boolean).join(" ");
+  const line2 = [jobStr(job, "geo_city"), jobStr(job, "geo_state"), jobStr(job, "geo_postcode")]
+    .filter(Boolean)
+    .join(" ");
+  const geo = [line1, line2].filter(Boolean).join(", ");
+  if (geo) return geo;
+
+  if (!company) return "";
+  const companyDirect = jobStr(company, "address", "billing_address");
+  if (companyDirect) return companyDirect;
+  return [
+    jobStr(company, "address_street"),
+    jobStr(company, "address_city"),
+    jobStr(company, "address_state"),
+    jobStr(company, "address_postcode"),
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
 function moneyStr(job: Record<string, unknown>, ...keys: string[]): string {
   for (const k of keys) {
     const v = job[k];
@@ -34,7 +62,7 @@ export function buildSm8Map(
 ): Record<string, string> {
   const customer = ctx.customerName || jobStr(job, "company_name") || "";
   const parts = customer.trim().split(/\s+/);
-  const address = ctx.address || jobStr(job, "job_address", "address");
+  const address = ctx.address || resolveJobAddress(job);
   const description = jobStr(job, "description");
   const category = jobStr(job, "category");
   const currentUserFirst = ctx.currentUserFirst || "";
@@ -96,10 +124,7 @@ export function buildJobTemplateContext(
     (typeof job.job_number === "string" && job.job_number) ||
     String(job.uuid ?? "").slice(0, 8);
   const status = typeof job.status === "string" ? job.status : undefined;
-  const address =
-    (typeof job.job_address === "string" && job.job_address) ||
-    (typeof job.address === "string" && job.address) ||
-    undefined;
+  const address = resolveJobAddress(job, company) || undefined;
   const name =
     customerName ||
     (typeof company.name === "string" && company.name) ||
